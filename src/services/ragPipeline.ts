@@ -106,6 +106,7 @@ export async function ensureIndex(
         source: c.source,
         embedding: vectors[idx],
         headingPath: c.headingPath,
+        image: c.image,
       }));
       stored.push(...newlyStored);
       await putChunks(newlyStored);
@@ -146,6 +147,7 @@ export async function search(query: string, topK: number = TOP_K): Promise<Retri
       text: c.text,
       source: c.source,
       headingPath: c.headingPath,
+      image: c.image,
       score: cosineSimilarity(queryVec, c.embedding),
     }))
     .sort((a, b) => b.score - a.score);
@@ -178,6 +180,7 @@ export async function search(query: string, topK: number = TOP_K): Promise<Retri
 export interface IndexSourceSummary {
   source: string;
   chunkCount: number;
+  imageCount: number;
   sampleText: string;
   sampleHeadingPath: string[];
   embeddingDims: number;
@@ -185,6 +188,7 @@ export interface IndexSourceSummary {
 
 export interface IndexSummary {
   totalChunks: number;
+  totalImages: number;
   fingerprint: string | null;
   sources: IndexSourceSummary[];
 }
@@ -204,11 +208,12 @@ export async function getIndexSummary(): Promise<IndexSummary> {
     .map(([source, list]) => ({
       source,
       chunkCount: list.length,
+      imageCount: list.filter((c) => c.image).length,
       sampleText: list[0]?.text.slice(0, 160) ?? '',
       sampleHeadingPath: list[0]?.headingPath ?? [],
       embeddingDims: list[0]?.embedding.length ?? 0,
     }))
     .sort((a, b) => a.source.localeCompare(b.source));
 
-  return { totalChunks: chunks.length, fingerprint, sources };
+  return { totalChunks: chunks.length, totalImages: chunks.filter((c) => c.image).length, fingerprint, sources };
 }

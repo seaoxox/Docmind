@@ -1,9 +1,10 @@
-import type { ContentBlock } from '../types';
+import type { ChunkImage, ContentBlock } from '../types';
 
 export interface TextChunk {
   text: string;
   source: string;
   headingPath: string[];
+  image?: ChunkImage;
 }
 
 const CHUNK_SIZE = 600;
@@ -23,6 +24,8 @@ function samePath(a: string[], b: string[]): boolean {
  *  - carries the heading path forward on every chunk, so callers can prefix it into the
  *    text used for embedding (giving the vector real topical context) without polluting
  *    the chunk's own text, which stays a verbatim excerpt of the source document.
+ *  - keeps every image block as its own standalone chunk (never merged with surrounding
+ *    prose), so a retrieved chunk maps 1:1 to "does this carry an image or not".
  */
 export function chunkBlocks(blocks: ContentBlock[], source: string): TextChunk[] {
   const chunks: TextChunk[] = [];
@@ -37,6 +40,13 @@ export function chunkBlocks(blocks: ContentBlock[], source: string): TextChunk[]
   for (const block of blocks) {
     const text = block.text.trim();
     if (!text) continue;
+
+    if (block.image) {
+      flush();
+      chunks.push({ text, source, headingPath: block.headingPath, image: block.image });
+      bufferPath = block.headingPath;
+      continue;
+    }
 
     if (!samePath(block.headingPath, bufferPath) && buffer) {
       flush();
@@ -73,8 +83,14 @@ export function chunkDocuments(docs: { blocks: ContentBlock[]; name: string }[])
 
 /** Text actually embedded: heading context is prepended so the vector captures topical
  *  location, but this string is only ever used to compute the embedding — the chunk's
- *  own `text` (stored and shown to the LLM/user) stays an untouched excerpt of the source. */
+ *  own `text` (stored and shown to the LLM/user) stays an untouched excerpt of the source.
+ *  For image chunks, the caption (or heading context, if no caption was found) stands in
+ *  for the image itself — we have no way to "read" the diagram's content at index time
+ *  without an AI call, so the text around it is what makes it findable by search. */
 export function toEmbeddingText(chunk: TextChunk): string {
-  if (chunk.headingPath.length === 0) return chunk.text;
-  return `[章節: ${chunk.headingPath.join(' > ')}]\n${chunk.text}`;
+  const prefix = chunk.headingPath.length > 0 ? `[章節: ${chunk.headingPath.join(' > ')}]\n` : '';
+  if (chunk.image) {
+    return `${prefix}[圖片說明: ${chunk.image.caption || chunk.text}]`;
+  }
+  return `${prefix}${chunk.text}`;
 }

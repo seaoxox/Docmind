@@ -1,12 +1,18 @@
 export type DocType = 'markdown' | 'word' | 'pdf' | 'text' | 'unknown';
 export type DocCategory = 'guidance' | 'manual';
 
-/** A single structural unit of a document (one paragraph or list item), tagged with
+export interface ChunkImage {
+  dataUrl: string;
+  caption: string;
+}
+
+/** A single structural unit of a document (one paragraph, list item, or image), tagged with
  *  the heading/section it falls under, so chunking can respect real document structure
  *  and each chunk can carry its own topical context. */
 export interface ContentBlock {
   headingPath: string[];
   text: string;
+  image?: ChunkImage;
 }
 
 export interface AppDocument {
@@ -29,6 +35,7 @@ export interface RetrievedChunk {
   source: string;
   score: number;
   headingPath?: string[];
+  image?: ChunkImage;
 }
 
 export interface TokenUsage {
@@ -45,6 +52,7 @@ export interface QuestionRecord {
   citations: Citation[];
   timestamp: number;
   retrievedSources: string[];
+  usedImageCount: number;
   usage: TokenUsage | null;
 }
 

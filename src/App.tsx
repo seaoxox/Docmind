@@ -209,6 +209,7 @@ export default function App() {
         citations: result.citations,
         timestamp: Date.now(),
         retrievedSources: Array.from(new Set(chunks.map((c) => c.source))),
+        usedImageCount: result.imageCount,
         usage: usageToTokenUsage(result.usage, settings.model),
       };
       setHistory((prev) => [record, ...prev]);

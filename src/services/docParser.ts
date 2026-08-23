@@ -7,50 +7,87 @@ import type { AppDocument, ContentBlock, DocCategory } from '../types';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const HEADING_TAG = /^H([1-6])$/i;
+const CAPTION_PATTERN = /^(圖|表|附圖|附表|Fig(?:ure)?\.?|Table)\s*[\d一二三四五六七八九十]/i;
 
 /**
- * Walks Word's converted HTML (headings, paragraphs, list items) in document order,
+ * Walks Word's converted HTML (headings, paragraphs, list items, images) in document order,
  * tracking which heading each block currently falls under. This preserves the document's
  * real structure — which mammoth's plain-text extraction throws away — so chunking can
  * respect section boundaries instead of guessing from blank lines.
+ *
+ * Images are captured too (mammoth embeds them as base64 data URIs by default). Since we
+ * have no way to visually understand a diagram at index time without an AI call — which
+ * would break "building the index needs no API key" — each image is instead paired with
+ * its caption (the very next paragraph, if it looks like "圖3-1 ..." / "表2 ..." etc.).
+ * The image is only actually shown to the AI later, at question time, if its caption/heading
+ * context is what got semantically matched to the user's question — see aiService.ts.
  */
 function blocksFromHtml(html: string): ContentBlock[] {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const blocks: ContentBlock[] = [];
   const headingStack: string[] = [];
+  const topLevel = Array.from(doc.body.children);
 
-  const pushBlock = (text: string) => {
+  const pushText = (text: string) => {
     const trimmed = text.replace(/\s+/g, ' ').trim();
-    if (trimmed) blocks.push({ headingPath: [...headingStack], text: trimmed });
+    if (trimmed) blocks.push({ headingPath: headingStack.filter(Boolean), text: trimmed });
   };
 
-  const walk = (el: Element) => {
+  for (let i = 0; i < topLevel.length; i++) {
+    const el = topLevel[i];
     const headingMatch = el.tagName.match(HEADING_TAG);
+
     if (headingMatch) {
       const level = Number(headingMatch[1]);
       headingStack.length = Math.max(0, level - 1);
       const title = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
       if (title) headingStack[level - 1] = title;
-      return;
+      continue;
     }
 
     if (el.tagName === 'UL' || el.tagName === 'OL') {
       for (const li of Array.from(el.children)) {
-        if (li.tagName === 'LI') pushBlock(li.textContent ?? '');
+        if (li.tagName === 'LI') pushText(li.textContent ?? '');
       }
-      return;
+      continue;
     }
 
-    if (el.tagName === 'P' || el.tagName === 'TABLE') {
-      pushBlock(el.textContent ?? '');
-      return;
+    if (el.tagName === 'P') {
+      const img = el.querySelector('img');
+      if (img) {
+        const dataUrl = img.getAttribute('src') ?? '';
+        const next = topLevel[i + 1];
+        const nextText = next?.tagName === 'P' ? (next.textContent ?? '').replace(/\s+/g, ' ').trim() : '';
+        const caption = CAPTION_PATTERN.test(nextText) ? nextText : '';
+
+        if (dataUrl) {
+          blocks.push({
+            headingPath: headingStack.filter(Boolean),
+            text: caption || '[圖片]',
+            image: { dataUrl, caption },
+          });
+        }
+        if (caption) {
+          // Keep the caption as its own normal searchable text block too, and skip it
+          // on the next loop iteration since we've already consumed it here.
+          pushText(nextText);
+          i++;
+        }
+        continue;
+      }
+      pushText(el.textContent ?? '');
+      continue;
     }
 
-    // Unknown/wrapper element: recurse into children rather than dropping the content.
-    for (const child of Array.from(el.children)) walk(child);
-  };
+    if (el.tagName === 'TABLE') {
+      pushText(el.textContent ?? '');
+      continue;
+    }
 
-  for (const child of Array.from(doc.body.children)) walk(child);
+    // Unknown/wrapper element: fall back to its flattened text rather than dropping it.
+    pushText(el.textContent ?? '');
+  }
+
   return blocks;
 }
 
@@ -79,7 +116,7 @@ function blocksFromMarkdown(text: string): ContentBlock[] {
       }
     }
     const body = bodyLines.join(' ').trim();
-    if (body) blocks.push({ headingPath: [...headingStack], text: body });
+    if (body) blocks.push({ headingPath: headingStack.filter(Boolean), text: body });
   }
   return blocks;
 }
