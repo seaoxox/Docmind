@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { X, Database, RefreshCw, FileSearch, Fingerprint } from 'lucide-react';
+import { X, Database, RefreshCw, FileSearch, Fingerprint, Image as ImageIcon } from 'lucide-react';
 import { getIndexSummary, type IndexSummary } from '../services/ragPipeline';
 
 interface Props {
@@ -68,7 +68,7 @@ export function IndexDetailsModal({ open, onClose, onRebuild }: Props) {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-6 shrink-0">
+                <div className="grid grid-cols-3 gap-3 mb-6 shrink-0">
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
                     <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.totalChunks}</div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">總段落數</div>
@@ -76,6 +76,10 @@ export function IndexDetailsModal({ open, onClose, onRebuild }: Props) {
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
                     <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.sources.length}</div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">來源文件數</div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.totalImages}</div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">圖片段落數</div>
                   </div>
                 </div>
 
@@ -94,10 +98,22 @@ export function IndexDetailsModal({ open, onClose, onRebuild }: Props) {
                     >
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{s.source}</span>
-                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full shrink-0">
-                          {s.chunkCount} 段落
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {s.imageCount > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full">
+                              <ImageIcon className="w-2.5 h-2.5" /> {s.imageCount}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
+                            {s.chunkCount} 段落
+                          </span>
+                        </div>
                       </div>
+                      {s.sampleHeadingPath.length > 0 && (
+                        <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-medium mb-1 truncate">
+                          章節：{s.sampleHeadingPath.join(' > ')}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-500 dark:text-slate-400 italic line-clamp-2">「{s.sampleText}…」</p>
                       <p className="text-[9px] text-slate-300 dark:text-slate-600 mt-1.5 font-mono">
                         向量維度：{s.embeddingDims}

@@ -72,7 +72,7 @@ export function resolveActiveSettings(stored: StoredProviderSettings): ProviderS
   };
 }
 
-export const RAG_TOP_K_BOUNDS = { min: 8, max: 1024 } as const;
+export const RAG_TOP_K_BOUNDS = { min: 4, max: 64 } as const;
 const MIN_TOP_K = RAG_TOP_K_BOUNDS.min;
 const MAX_TOP_K = RAG_TOP_K_BOUNDS.max;
 

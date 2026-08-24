@@ -56,7 +56,8 @@ export function Disclaimer({ open, onAccept }: Props) {
                     <span className="text-indigo-500 font-bold">03.</span>
                     <span>
                       本系統為純前端應用：文件解析與向量嵌入皆在您的瀏覽器本機完成（使用 Hugging Face 模型），並儲存於本機
-                      IndexedDB。僅有搜尋到的相關段落與您的提問會傳送至您自行設定的 AI 供應商（Gemini／OpenAI／Anthropic）API，不會經過本站伺服器。
+                      IndexedDB。僅有搜尋到的相關段落（若段落為文件中的圖片／流程圖，則含該圖片本身）與您的提問，會傳送至您自行設定的
+                      AI 供應商（Gemini／OpenAI／Anthropic）API，不會經過本站伺服器。
                     </span>
                   </p>
                 </div>

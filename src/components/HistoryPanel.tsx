@@ -49,12 +49,19 @@ interface Props {
   history: QuestionRecord[];
   activeId: string | null;
   onSelect: (record: QuestionRecord) => void;
+  totalCount?: number;
 }
 
-export function HistoryPanel({ history, activeId, onSelect }: Props) {
+export function HistoryPanel({ history, activeId, onSelect, totalCount }: Props) {
+  const hasMore = totalCount !== undefined && totalCount > history.length;
   return (
     <>
-      <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">詢問記錄 / Records</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">詢問記錄 / Records</h2>
+        {hasMore && (
+          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">最新 {history.length} 筆</span>
+        )}
+      </div>
       <div className="flex-1 space-y-2 overflow-y-auto pr-2 custom-scrollbar pb-40">
         {history.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 opacity-50 space-y-2">

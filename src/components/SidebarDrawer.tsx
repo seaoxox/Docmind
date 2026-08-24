@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { X, MessageSquare, BookOpen, Settings as SettingsIcon, RotateCw, Coins } from 'lucide-react';
+import { X, MessageSquare, BookOpen, Settings as SettingsIcon, RotateCw, Coins, History } from 'lucide-react';
 import type { ViewMode } from '../types';
 import { cn } from '../lib/utils';
 import { ThemeToggle } from './ThemeToggle';
@@ -13,6 +13,7 @@ interface Props {
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpenIndexDetails: () => void;
+  onOpenHistoryArchive: () => void;
   sessionCost: number;
 }
 
@@ -25,6 +26,7 @@ export function SidebarDrawer({
   onToggleTheme,
   onOpenSettings,
   onOpenIndexDetails,
+  onOpenHistoryArchive,
   sessionCost,
 }: Props) {
   return (
@@ -137,6 +139,22 @@ export function SidebarDrawer({
                 <div>
                   <div className="text-sm">AI 供應商設定</div>
                   <div className="text-[10px] font-medium opacity-60 text-slate-400">API Key & Model</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  onOpenHistoryArchive();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all font-bold text-left group text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 transition-colors">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm">歷史問答紀錄</div>
+                  <div className="text-[10px] font-medium opacity-60 text-slate-400">All Q&A Records</div>
                 </div>
               </button>
 

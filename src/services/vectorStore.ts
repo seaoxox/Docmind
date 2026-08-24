@@ -1,8 +1,12 @@
+import type { ChunkImage } from '../types';
+
 export interface StoredChunk {
   id: string;
   text: string;
   source: string;
   embedding: number[];
+  headingPath: string[];
+  image?: ChunkImage;
 }
 
 const DB_NAME = 'docmind-vector-store';

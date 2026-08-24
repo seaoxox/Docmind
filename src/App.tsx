@@ -29,6 +29,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { IndexStatusBadge } from './components/IndexStatus';
 import { IndexDetailsModal } from './components/IndexDetailsModal';
+import { HistoryArchiveModal } from './components/HistoryArchiveModal';
 import { IndexingOverlay } from './components/IndexingOverlay';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { HistoryPanel, HistoryItem } from './components/HistoryPanel';
@@ -77,6 +78,8 @@ export default function App() {
   const [manualChapters, setManualChapters] = useState<ManualChapter[]>([]);
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
+  const [historyArchiveOpen, setHistoryArchiveOpen] = useState(false);
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false);
   const [isRebuild, setIsRebuild] = useState(false);
   const allDocsRef = useRef<AppDocument[]>([]);
@@ -209,6 +212,7 @@ export default function App() {
         citations: result.citations,
         timestamp: Date.now(),
         retrievedSources: Array.from(new Set(chunks.map((c) => c.source))),
+        usedImageCount: result.imageCount,
         usage: usageToTokenUsage(result.usage, settings.model),
       };
       setHistory((prev) => [record, ...prev]);
@@ -248,6 +252,29 @@ export default function App() {
         message="這會清除目前已建立的向量索引，並重新切割、嵌入所有指引文件，過程中無法進行問答，可能需要一些時間。"
         secondMessage="請再次確認：此操作無法復原，將立即清除現有索引並重新開始建立。確定要繼續嗎？"
       />
+      <HistoryArchiveModal
+        open={historyArchiveOpen}
+        history={history}
+        activeId={currentRecordId}
+        onClose={() => setHistoryArchiveOpen(false)}
+        onSelect={handleSelectHistory}
+        onRequestClear={() => {
+          setHistoryArchiveOpen(false);
+          setClearHistoryConfirmOpen(true);
+        }}
+      />
+      <ConfirmDialog
+        open={clearHistoryConfirmOpen}
+        onClose={() => setClearHistoryConfirmOpen(false)}
+        onConfirm={() => {
+          setHistory([]);
+          setCurrentRecordId(null);
+        }}
+        title="清空所有歷史紀錄？"
+        message="這會刪除目前儲存在本機的所有詢問記錄與回答內容，無法復原。"
+        secondMessage="請再次確認：所有歷史紀錄將被永久刪除，確定要繼續嗎？"
+        confirmLabel="確定清空"
+      />
       <SettingsModal
         open={settingsOpen}
         settings={storedSettings}
@@ -265,6 +292,7 @@ export default function App() {
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenIndexDetails={() => setIndexDetailsOpen(true)}
+        onOpenHistoryArchive={() => setHistoryArchiveOpen(true)}
         sessionCost={sessionCost}
       />
 
@@ -307,7 +335,12 @@ export default function App() {
               <aside className="w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shadow-sm pt-24">
                 <div className="flex-1 flex flex-col min-h-0 relative">
                   <div className="p-6 flex-1 flex flex-col min-h-0">
-                    <HistoryPanel history={history} activeId={currentRecordId} onSelect={handleSelectHistory} />
+                    <HistoryPanel
+                      history={history.slice(0, 10)}
+                      activeId={currentRecordId}
+                      onSelect={handleSelectHistory}
+                      totalCount={history.length}
+                    />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800/50">
                     <AskInput

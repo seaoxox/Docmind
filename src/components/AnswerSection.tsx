@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Coins } from 'lucide-react';
+import { LayoutDashboard, Coins, Image as ImageIcon } from 'lucide-react';
 import type { QuestionRecord } from '../types';
 
 function formatCost(v: number): string {
@@ -12,12 +12,17 @@ function UsageTag({ record }: { record: QuestionRecord }) {
   if (!record.usage) return null;
   const { inputTokens, outputTokens, cost } = record.usage;
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-2">
-      <Coins className="w-3 h-3 text-amber-400 shrink-0" />
-      <span>
+    <div className="flex items-center gap-3 text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-2">
+      <span className="flex items-center gap-1.5">
+        <Coins className="w-3 h-3 text-amber-400 shrink-0" />
         輸入 {inputTokens.toLocaleString()} · 輸出 {outputTokens.toLocaleString()} tokens
         {cost != null && <> · {formatCost(cost)}</>}
       </span>
+      {record.usedImageCount > 0 && (
+        <span className="flex items-center gap-1 text-indigo-500 dark:text-indigo-400">
+          <ImageIcon className="w-3 h-3 shrink-0" /> 已附上 {record.usedImageCount} 張圖片
+        </span>
+      )}
     </div>
   );
 }
