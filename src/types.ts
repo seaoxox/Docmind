@@ -53,6 +53,7 @@ export interface QuestionRecord {
   timestamp: number;
   retrievedSources: string[];
   usedImageCount: number;
+  usedFullTextMode: boolean;
   usage: TokenUsage | null;
 }
 

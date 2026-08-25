@@ -1,5 +1,5 @@
 import type { AppDocument, Manifest, RetrievedChunk } from '../types';
-import { chunkDocuments, toEmbeddingText } from './chunking';
+import { chunkDocuments, renderFullText, toEmbeddingText } from './chunking';
 import { embedQuery, embedTexts, type EmbeddingProgress } from './embeddingService';
 import { clearChunks, countChunks, getAllChunks, getMeta, putChunks, setMeta, type StoredChunk } from './vectorStore';
 import { uid } from '../lib/utils';
@@ -175,6 +175,33 @@ export async function search(query: string, topK: number = TOP_K): Promise<Retri
   }
 
   return result;
+}
+
+/**
+ * "Full-Text Mode": bypasses vector retrieval entirely and hands the AI the complete text
+ * of every loaded document (with heading structure restored), plus every image found across
+ * them. This trades a much larger token bill for guaranteed recall — nothing gets filtered
+ * out, so there's no risk of a relevant passage failing to score into the Top-K. Intended as
+ * an explicit, opt-in fallback for when retrieval-based answers come back empty or wrong.
+ */
+export function buildFullTextChunks(docs: AppDocument[]): RetrievedChunk[] {
+  const textChunks: RetrievedChunk[] = docs
+    .map((d) => ({ text: renderFullText(d.blocks), source: d.name, score: 1 }))
+    .filter((c) => c.text.trim().length > 0);
+
+  const imageChunks: RetrievedChunk[] = docs.flatMap((d) =>
+    d.blocks
+      .filter((b) => b.image)
+      .map((b) => ({
+        text: b.image!.caption || b.text,
+        source: d.name,
+        score: 1,
+        headingPath: b.headingPath,
+        image: b.image,
+      }))
+  );
+
+  return [...textChunks, ...imageChunks];
 }
 
 export interface IndexSourceSummary {

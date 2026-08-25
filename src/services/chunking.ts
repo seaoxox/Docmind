@@ -81,6 +81,28 @@ export function chunkDocuments(docs: { blocks: ContentBlock[]; name: string }[])
   return docs.flatMap((d) => chunkBlocks(d.blocks, d.name));
 }
 
+/**
+ * Reconstructs a document's full text with its heading structure restored (as Markdown-style
+ * headers), for "Full-Text Mode" — where retrieval is skipped entirely and the whole document
+ * is sent to the AI verbatim. Images are left out here; callers should attach them separately
+ * (see ragPipeline.ts's buildFullTextChunks), matching how retrieval-based chunks work.
+ */
+export function renderFullText(blocks: ContentBlock[]): string {
+  const lines: string[] = [];
+  let lastPath: string[] = [];
+  for (const block of blocks) {
+    if (block.image) continue;
+    const text = block.text.trim();
+    if (!text) continue;
+    if (!samePath(block.headingPath, lastPath) && block.headingPath.length > 0) {
+      lines.push(`## ${block.headingPath.join(' > ')}`);
+      lastPath = block.headingPath;
+    }
+    lines.push(text);
+  }
+  return lines.join('\n\n');
+}
+
 /** Text actually embedded: heading context is prepended so the vector captures topical
  *  location, but this string is only ever used to compute the embedding — the chunk's
  *  own `text` (stored and shown to the LLM/user) stays an untouched excerpt of the source.

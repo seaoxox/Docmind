@@ -9,7 +9,7 @@ import { parseFromUrl } from './services/docParser';
 import { askQuestion, usageToTokenUsage, SYSTEM_PROMPT_TEXT } from './services/aiService';
 import { getModelPricing } from './services/models';
 import { loadManifest } from './services/manifest';
-import { ensureIndex, search, type IndexStatus } from './services/ragPipeline';
+import { ensureIndex, search, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
 import {
   loadSettings,
   saveSettings,
@@ -37,6 +37,7 @@ import { AnswerSection } from './components/AnswerSection';
 import { CitationStrip, CitationModal } from './components/CitationStrip';
 import { SourceTags } from './components/SourceTags';
 import { AskInput, type CostEstimate } from './components/AskInput';
+import { FullTextModeToggle } from './components/FullTextModeToggle';
 import { ManualBrowser } from './components/ManualBrowser';
 
 const BASE = import.meta.env.BASE_URL;
@@ -76,6 +77,7 @@ export default function App() {
 
   // ---- Documents + vector index ----
   const [manualChapters, setManualChapters] = useState<ManualChapter[]>([]);
+  const [fullModeTokenEstimate, setFullModeTokenEstimate] = useState(0);
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
   const [historyArchiveOpen, setHistoryArchiveOpen] = useState(false);
@@ -123,6 +125,7 @@ export default function App() {
 
         allDocsRef.current = [...guidanceDocs, ...manualDocs];
         setManualChapters(manifest.manual);
+        setFullModeTokenEstimate(allDocsRef.current.reduce((sum, d) => sum + estimateTokens(d.content), 0));
 
         await ensureIndex(allDocsRef.current, manifestRef.current, setIndexStatus);
       } catch (err) {
@@ -145,6 +148,7 @@ export default function App() {
   const [askError, setAskError] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
+  const [fullTextMode, setFullTextMode] = useState(false);
 
   useEffect(() => saveHistory(history), [history]);
 
@@ -155,9 +159,18 @@ export default function App() {
     [history]
   );
 
+  const fullModeCostEstimate = useMemo(() => {
+    const pricing = getModelPricing(settings.model);
+    if (!pricing) return null;
+    // Output is negligible relative to the whole-corpus input, so just use the low estimate.
+    return (fullModeTokenEstimate / 1_000_000) * pricing.input + (500 / 1_000_000) * pricing.output;
+  }, [fullModeTokenEstimate, settings.model]);
+
   // Pre-send cost prediction (B): debounced, runs the actual local vector search
   // (free, in-browser) so the estimate reflects the real context that would be sent.
+  // Skipped entirely in Full-Text Mode, which has its own static estimate above.
   useEffect(() => {
+    if (fullTextMode) return;
     const q = question.trim();
     if (!q || indexStatus.phase !== 'ready') {
       setCostEstimate(null);
@@ -191,19 +204,23 @@ export default function App() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [question, indexStatus.phase, settings.model, ragSettings.topK]);
+  }, [question, indexStatus.phase, settings.model, ragSettings.topK, fullTextMode]);
 
   const handleAsk = async () => {
     if (!question.trim() || asking) return;
-    if (indexStatus.phase !== 'ready') {
+    if (!fullTextMode && indexStatus.phase !== 'ready') {
       setAskError('向量索引尚未建立完成，請稍候再試。');
+      return;
+    }
+    if (fullTextMode && allDocsRef.current.length === 0) {
+      setAskError('尚未載入任何指引文件。');
       return;
     }
     setAskError(null);
     setAsking(true);
     const q = question;
     try {
-      const chunks = await search(q, ragSettings.topK);
+      const chunks = fullTextMode ? buildFullTextChunks(allDocsRef.current) : await search(q, ragSettings.topK);
       const result = await askQuestion(settings, q, chunks);
       const record: QuestionRecord = {
         id: uid('qr'),
@@ -213,6 +230,7 @@ export default function App() {
         timestamp: Date.now(),
         retrievedSources: Array.from(new Set(chunks.map((c) => c.source))),
         usedImageCount: result.imageCount,
+        usedFullTextMode: fullTextMode,
         usage: usageToTokenUsage(result.usage, settings.model),
       };
       setHistory((prev) => [record, ...prev]);
@@ -343,6 +361,13 @@ export default function App() {
                     />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800/50">
+                    <FullTextModeToggle
+                      enabled={fullTextMode}
+                      onChange={setFullTextMode}
+                      estimatedTokens={fullModeTokenEstimate}
+                      estimatedCost={fullModeCostEstimate}
+                      docCount={allDocsRef.current.length}
+                    />
                     <AskInput
                       value={question}
                       onChange={setQuestion}
@@ -405,7 +430,7 @@ export default function App() {
                 </button>
               </header>
 
-              <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-32">
+              <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-44">
                 <AnswerSection record={currentRecord} loading={asking} error={askError} compact />
 
                 {currentRecord && (
@@ -429,6 +454,13 @@ export default function App() {
               </main>
 
               <footer className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md absolute bottom-0 left-0 right-0 z-20">
+                <FullTextModeToggle
+                  enabled={fullTextMode}
+                  onChange={setFullTextMode}
+                  estimatedTokens={fullModeTokenEstimate}
+                  estimatedCost={fullModeCostEstimate}
+                  docCount={allDocsRef.current.length}
+                />
                 <AskInput
                   value={question}
                   onChange={setQuestion}
