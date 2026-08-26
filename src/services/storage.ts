@@ -101,8 +101,7 @@ export function saveRagSettings(settings: RagSettings) {
 export function loadHistory(): QuestionRecord[] {
   try {
     const raw = localStorage.getItem(KEYS.history);
-    if (raw) return JSON.parse(raw);
-  } catch {
+    if (raw) {
     /* ignore */
   }
   return [];
