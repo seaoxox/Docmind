@@ -42,6 +42,10 @@ import { FullTextModeToggle } from './components/FullTextModeToggle';
 import { ManualBrowser } from './components/ManualBrowser';
 
 const BASE = import.meta.env.BASE_URL;
+// A rewritten query's similarity score is scaled down before comparing against the original
+// question's — even a sanity-checked rewrite could still be a worse match than the original,
+// so this keeps it from outranking clearly-better original-question matches.
+const REWRITTEN_QUERY_WEIGHT = 0.8;
 
 export default function App() {
   // ---- Theme ----
@@ -230,15 +234,25 @@ export default function App() {
         if (ragSettings.queryRewrite) {
           try {
             const rewriteResult = await rewriteQuery(settings, q);
-            if (rewriteResult.rewritten && rewriteResult.rewritten !== q) {
-              rewrittenQuery = rewriteResult.rewritten;
-              rewriteUsage = rewriteResult.usage;
+            // The rewrite call costs tokens regardless of whether we end up using its
+            // output, so its usage is always counted toward this question's total cost.
+            rewriteUsage = rewriteResult.usage;
+            const candidate = rewriteResult.rewritten.trim();
+            // Sanity check: a rewrite that collapsed down to a bare keyword (far shorter
+            // than the original question) is a failure mode, not a real query — using it
+            // would just pollute ranking with generic matches. Discard and fall back to
+            // searching on the original question alone.
+            const looksDegenerate = candidate.length < Math.max(6, q.trim().length * 0.5);
+            if (candidate && candidate !== q && !looksDegenerate) {
+              rewrittenQuery = candidate;
             }
           } catch {
             // Non-fatal: fall back to searching with the original question alone.
           }
         }
-        chunks = await searchMulti(rewrittenQuery ? [q, rewrittenQuery] : [q], ragSettings.topK);
+        chunks = rewrittenQuery
+          ? await searchMulti([q, rewrittenQuery], ragSettings.topK, [1, REWRITTEN_QUERY_WEIGHT])
+          : await searchMulti([q], ragSettings.topK);
       }
 
       const result = await askQuestion(settings, q, chunks);

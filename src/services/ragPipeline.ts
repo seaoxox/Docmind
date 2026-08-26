@@ -139,23 +139,36 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * Searches with multiple query variants at once, scoring each chunk by its BEST similarity
  * across any of them, then applying the usual source-diversity selection. This is what makes
  * query rewriting safe: if a rewritten query happens to drift off-target, the original
- * question's matches are still considered, so results can only get better or stay the same,
- * never worse, relative to searching on the original question alone.
+ * question's matches are still considered.
+ *
+ * Optional per-query `weights` (same length/order as `queries`) scale each query's similarity
+ * before the max is taken. This matters for rewritten queries specifically: a rewrite that
+ * degenerates into an overly generic term (e.g. "結核" instead of a full question) can score
+ * unrealistically high against nearly every chunk in a corpus that's *about* tuberculosis,
+ * which would otherwise let a bad rewrite silently outrank the original question's more
+ * precise matches. Down-weighting non-original queries keeps that failure mode from actively
+ * hurting results, on top of the safety net above.
  */
-export async function searchMulti(queries: string[], topK: number = TOP_K): Promise<RetrievedChunk[]> {
+export async function searchMulti(
+  queries: string[],
+  topK: number = TOP_K,
+  weights?: number[]
+): Promise<RetrievedChunk[]> {
   if (!cachedChunks) {
     cachedChunks = await getAllChunks();
   }
-  const validQueries = queries.map((q) => q.trim()).filter(Boolean);
-  if (cachedChunks.length === 0 || validQueries.length === 0) return [];
+  const pairs = queries
+    .map((q, i) => ({ q: q.trim(), w: weights?.[i] ?? 1 }))
+    .filter((p) => p.q.length > 0);
+  if (cachedChunks.length === 0 || pairs.length === 0) return [];
 
-  const queryVecs = await Promise.all(validQueries.map((q) => embedQuery(q)));
+  const queryVecs = await Promise.all(pairs.map((p) => embedQuery(p.q)));
 
   const scored = cachedChunks
     .map((c) => {
       let best = -Infinity;
-      for (const qv of queryVecs) {
-        const s = cosineSimilarity(qv, c.embedding);
+      for (let i = 0; i < queryVecs.length; i++) {
+        const s = cosineSimilarity(queryVecs[i], c.embedding) * pairs[i].w;
         if (s > best) best = s;
       }
       return {

@@ -1,7 +1,20 @@
 import type { ProviderSettings } from '../types';
 import { postWithRateLimitRetry } from './aiService';
 
-const REWRITE_SYSTEM_PROMPT = `You rewrite a user's casual question into a short search query phrased closer to how the answer would actually be worded in formal Traditional Chinese medical/administrative guideline documents. Expand abbreviations, add likely synonyms or formal/clinical terminology the source document would use, but keep it concise (under 60 characters) and preserve the original intent exactly — do not answer the question, do not add information not implied by it.
+const REWRITE_SYSTEM_PROMPT = `You rewrite a user's casual question into a search query phrased closer to how the answer would actually be worded in formal Traditional Chinese medical/administrative guideline documents. Expand abbreviations and add the formal/clinical/administrative terminology the source document would likely use. Every part of the original question's meaning (who, what condition, what action) must still be represented in the rewrite — do not answer the question, do not add information not implied by it.
+
+The rewritten query MUST be a complete phrase or sentence, never a single bare word or topic keyword. Collapsing the question down to one or two generic terms is a failure, even if that term is technically related.
+
+Examples:
+Original: 誰可以申請防癆補助
+Rewritten: 結核病患者申請防癆補助之資格條件與適用對象
+
+Original: 疑似TB不能用哪些藥物治療
+Rewritten: 疑似結核病病人於鑑別診斷期間應排除使用之藥物與抗生素治療禁忌
+
+Original: 密切接觸者要做什麼檢查
+Rewritten: 結核病密切接觸者接觸者檢查與追蹤流程之檢驗項目
+
 Respond with ONLY the rewritten query text in Traditional Chinese. No quotes, no explanation, no markdown, no preamble.`;
 
 export interface RewriteResult {
