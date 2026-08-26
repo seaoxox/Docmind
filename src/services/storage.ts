@@ -102,6 +102,19 @@ export function loadHistory(): QuestionRecord[] {
   try {
     const raw = localStorage.getItem(KEYS.history);
     if (raw) {
+      const parsed = JSON.parse(raw) as any[];
+      return parsed.map((r) => ({
+        ...r,
+        citations: r.citations || [],
+        retrievedSources: r.retrievedSources || [],
+        usedImageCount: r.usedImageCount || 0,
+        usedFullTextMode: r.usedFullTextMode || false,
+        rewrittenQuery: r.rewrittenQuery || null,
+        usedChunks: r.usedChunks || [],
+        usage: r.usage || null,
+      }));
+    }
+  } catch {
     /* ignore */
   }
   return [];
