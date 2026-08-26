@@ -1,11 +1,12 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, KeyRound, Info, ChevronDown, SlidersHorizontal, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, KeyRound, Info, ChevronDown, SlidersHorizontal, AlertTriangle, CheckCircle2, Wand2 } from 'lucide-react';
 import type { AiProvider, RagSettings, StoredProviderSettings } from '../types';
 import { DEFAULT_MODELS, MODEL_OPTIONS } from '../services/models';
 import { TOP_K as RECOMMENDED_TOP_K } from '../services/ragPipeline';
 import { RAG_TOP_K_BOUNDS } from '../services/storage';
 import { cn } from '../lib/utils';
+import { Switch } from './Switch';
 
 interface Props {
   open: boolean;
@@ -181,7 +182,7 @@ export function SettingsModal({ open, settings, ragSettings, onClose, onSave, on
                   max={RAG_TOP_K_BOUNDS.max}
                   step={1}
                   value={ragDraft.topK}
-                  onChange={(e) => setRagDraft({ topK: Number(e.target.value) })}
+                  onChange={(e) => setRagDraft((d) => ({ ...d, topK: Number(e.target.value) }))}
                   className="slider-fancy w-full"
                   style={
                     {
@@ -223,6 +224,19 @@ export function SettingsModal({ open, settings, ragSettings, onClose, onSave, on
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    <Wand2 size={12} /> 查詢改寫
+                  </label>
+                  <Switch checked={ragDraft.queryRewrite} onChange={(v) => setRagDraft((d) => ({ ...d, queryRewrite: v }))} />
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  提問時先讓 AI 把問題改寫成更貼近文件用詞的查詢句再去搜尋（仍會針對您原本的問題作答，只影響搜尋這一步），可提升口語化問法的命中率，但每次提問會多一次輕量 AI
+                  呼叫，略增花費與等待時間。全文模式開啟時不會用到此設定。
+                </p>
               </div>
 
               <p className="rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">

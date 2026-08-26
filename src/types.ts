@@ -54,6 +54,7 @@ export interface QuestionRecord {
   retrievedSources: string[];
   usedImageCount: number;
   usedFullTextMode: boolean;
+  rewrittenQuery: string | null;
   usage: TokenUsage | null;
 }
 
@@ -79,6 +80,7 @@ export interface StoredProviderSettings {
 
 export interface RagSettings {
   topK: number;
+  queryRewrite: boolean;
 }
 
 export interface ManualFileEntry {

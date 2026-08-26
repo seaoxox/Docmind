@@ -9,7 +9,8 @@ import { parseFromUrl } from './services/docParser';
 import { askQuestion, usageToTokenUsage, SYSTEM_PROMPT_TEXT } from './services/aiService';
 import { getModelPricing } from './services/models';
 import { loadManifest } from './services/manifest';
-import { ensureIndex, search, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
+import { ensureIndex, search, searchMulti, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
+import { rewriteQuery } from './services/queryRewrite';
 import {
   loadSettings,
   saveSettings,
@@ -219,9 +220,32 @@ export default function App() {
     setAskError(null);
     setAsking(true);
     const q = question;
+    let rewrittenQuery: string | null = null;
+    let rewriteUsage = { inputTokens: 0, outputTokens: 0 };
     try {
-      const chunks = fullTextMode ? buildFullTextChunks(allDocsRef.current) : await search(q, ragSettings.topK);
+      let chunks;
+      if (fullTextMode) {
+        chunks = buildFullTextChunks(allDocsRef.current);
+      } else {
+        if (ragSettings.queryRewrite) {
+          try {
+            const rewriteResult = await rewriteQuery(settings, q);
+            if (rewriteResult.rewritten && rewriteResult.rewritten !== q) {
+              rewrittenQuery = rewriteResult.rewritten;
+              rewriteUsage = rewriteResult.usage;
+            }
+          } catch {
+            // Non-fatal: fall back to searching with the original question alone.
+          }
+        }
+        chunks = await searchMulti(rewrittenQuery ? [q, rewrittenQuery] : [q], ragSettings.topK);
+      }
+
       const result = await askQuestion(settings, q, chunks);
+      const combinedUsage = {
+        inputTokens: result.usage.inputTokens + rewriteUsage.inputTokens,
+        outputTokens: result.usage.outputTokens + rewriteUsage.outputTokens,
+      };
       const record: QuestionRecord = {
         id: uid('qr'),
         question: q,
@@ -231,7 +255,8 @@ export default function App() {
         retrievedSources: Array.from(new Set(chunks.map((c) => c.source))),
         usedImageCount: result.imageCount,
         usedFullTextMode: fullTextMode,
-        usage: usageToTokenUsage(result.usage, settings.model),
+        rewrittenQuery,
+        usage: usageToTokenUsage(combinedUsage, settings.model),
       };
       setHistory((prev) => [record, ...prev]);
       setCurrentRecordId(record.id);
@@ -367,6 +392,7 @@ export default function App() {
                       estimatedTokens={fullModeTokenEstimate}
                       estimatedCost={fullModeCostEstimate}
                       docCount={allDocsRef.current.length}
+                      provider={settings.provider}
                     />
                     <AskInput
                       value={question}
@@ -460,6 +486,7 @@ export default function App() {
                   estimatedTokens={fullModeTokenEstimate}
                   estimatedCost={fullModeCostEstimate}
                   docCount={allDocsRef.current.length}
+                  provider={settings.provider}
                 />
                 <AskInput
                   value={question}

@@ -77,19 +77,21 @@ const MIN_TOP_K = RAG_TOP_K_BOUNDS.min;
 const MAX_TOP_K = RAG_TOP_K_BOUNDS.max;
 
 export function loadRagSettings(): RagSettings {
+  const fallback: RagSettings = { topK: TOP_K, queryRewrite: false };
   try {
     const raw = localStorage.getItem(KEYS.rag);
     if (raw) {
       const parsed = JSON.parse(raw);
       const topK = Number(parsed?.topK);
-      if (Number.isFinite(topK)) {
-        return { topK: Math.min(MAX_TOP_K, Math.max(MIN_TOP_K, Math.round(topK))) };
-      }
+      return {
+        topK: Number.isFinite(topK) ? Math.min(MAX_TOP_K, Math.max(MIN_TOP_K, Math.round(topK))) : fallback.topK,
+        queryRewrite: typeof parsed?.queryRewrite === 'boolean' ? parsed.queryRewrite : fallback.queryRewrite,
+      };
     }
   } catch {
     /* ignore */
   }
-  return { topK: TOP_K };
+  return fallback;
 }
 
 export function saveRagSettings(settings: RagSettings) {

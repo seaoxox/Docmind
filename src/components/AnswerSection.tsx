@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Coins, Image as ImageIcon, FileStack } from 'lucide-react';
+import { LayoutDashboard, Coins, Image as ImageIcon, FileStack, Wand2 } from 'lucide-react';
 import type { QuestionRecord } from '../types';
 
 function formatCost(v: number): string {
@@ -12,21 +12,31 @@ function UsageTag({ record }: { record: QuestionRecord }) {
   if (!record.usage) return null;
   const { inputTokens, outputTokens, cost } = record.usage;
   return (
-    <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-2">
-      <span className="flex items-center gap-1.5">
-        <Coins className="w-3 h-3 text-amber-400 shrink-0" />
-        輸入 {inputTokens.toLocaleString()} · 輸出 {outputTokens.toLocaleString()} tokens
-        {cost != null && <> · {formatCost(cost)}</>}
-      </span>
-      {record.usedFullTextMode && (
-        <span className="flex items-center gap-1 text-amber-500 dark:text-amber-400">
-          <FileStack className="w-3 h-3 shrink-0" /> 全文模式
+    <div className="mt-2 space-y-1.5">
+      <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-slate-400 dark:text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <Coins className="w-3 h-3 text-amber-400 shrink-0" />
+          輸入 {inputTokens.toLocaleString()} · 輸出 {outputTokens.toLocaleString()} tokens
+          {cost != null && <> · {formatCost(cost)}</>}
         </span>
-      )}
-      {record.usedImageCount > 0 && (
-        <span className="flex items-center gap-1 text-indigo-500 dark:text-indigo-400">
-          <ImageIcon className="w-3 h-3 shrink-0" /> 已附上 {record.usedImageCount} 張圖片
-        </span>
+        {record.usedFullTextMode && (
+          <span className="flex items-center gap-1 text-amber-500 dark:text-amber-400">
+            <FileStack className="w-3 h-3 shrink-0" /> 全文模式
+          </span>
+        )}
+        {record.usedImageCount > 0 && (
+          <span className="flex items-center gap-1 text-indigo-500 dark:text-indigo-400">
+            <ImageIcon className="w-3 h-3 shrink-0" /> 已附上 {record.usedImageCount} 張圖片
+          </span>
+        )}
+      </div>
+      {record.rewrittenQuery && (
+        <div className="flex items-start gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+          <Wand2 className="w-3 h-3 shrink-0 mt-0.5 text-violet-400" />
+          <span>
+            搜尋改寫為：<span className="italic text-slate-500 dark:text-slate-400">「{record.rewrittenQuery}」</span>
+          </span>
+        </div>
       )}
     </div>
   );

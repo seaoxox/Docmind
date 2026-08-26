@@ -135,21 +135,37 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * signal — the cap only kicks in once a source has already claimed a generous share of the
  * results, leaving room for other documents to surface when they're genuinely relevant too.
  */
-export async function search(query: string, topK: number = TOP_K): Promise<RetrievedChunk[]> {
+/**
+ * Searches with multiple query variants at once, scoring each chunk by its BEST similarity
+ * across any of them, then applying the usual source-diversity selection. This is what makes
+ * query rewriting safe: if a rewritten query happens to drift off-target, the original
+ * question's matches are still considered, so results can only get better or stay the same,
+ * never worse, relative to searching on the original question alone.
+ */
+export async function searchMulti(queries: string[], topK: number = TOP_K): Promise<RetrievedChunk[]> {
   if (!cachedChunks) {
     cachedChunks = await getAllChunks();
   }
-  if (cachedChunks.length === 0) return [];
+  const validQueries = queries.map((q) => q.trim()).filter(Boolean);
+  if (cachedChunks.length === 0 || validQueries.length === 0) return [];
 
-  const queryVec = await embedQuery(query);
+  const queryVecs = await Promise.all(validQueries.map((q) => embedQuery(q)));
+
   const scored = cachedChunks
-    .map((c) => ({
-      text: c.text,
-      source: c.source,
-      headingPath: c.headingPath,
-      image: c.image,
-      score: cosineSimilarity(queryVec, c.embedding),
-    }))
+    .map((c) => {
+      let best = -Infinity;
+      for (const qv of queryVecs) {
+        const s = cosineSimilarity(qv, c.embedding);
+        if (s > best) best = s;
+      }
+      return {
+        text: c.text,
+        source: c.source,
+        headingPath: c.headingPath,
+        image: c.image,
+        score: best,
+      };
+    })
     .sort((a, b) => b.score - a.score);
 
   const distinctSources = new Set(scored.map((c) => c.source)).size;
@@ -175,6 +191,10 @@ export async function search(query: string, topK: number = TOP_K): Promise<Retri
   }
 
   return result;
+}
+
+export async function search(query: string, topK: number = TOP_K): Promise<RetrievedChunk[]> {
+  return searchMulti([query], topK);
 }
 
 /**
