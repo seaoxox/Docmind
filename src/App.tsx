@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, History as HistoryIcon, X, Quote } from 'lucide-react';
+import { Menu, History as HistoryIcon, X, Quote, Layers } from 'lucide-react';
 
 import type { AppDocument, Manifest, ManualChapter, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
 import { cn, taipeiDateString, uid } from './lib/utils';
@@ -31,6 +31,7 @@ import { SidebarDrawer } from './components/SidebarDrawer';
 import { IndexStatusBadge } from './components/IndexStatus';
 import { IndexDetailsModal } from './components/IndexDetailsModal';
 import { HistoryArchiveModal } from './components/HistoryArchiveModal';
+import { UsedChunksModal } from './components/UsedChunksModal';
 import { IndexingOverlay } from './components/IndexingOverlay';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { HistoryPanel, HistoryItem } from './components/HistoryPanel';
@@ -46,6 +47,10 @@ const BASE = import.meta.env.BASE_URL;
 // question's — even a sanity-checked rewrite could still be a worse match than the original,
 // so this keeps it from outranking clearly-better original-question matches.
 const REWRITTEN_QUERY_WEIGHT = 0.8;
+// Caps how much of a chunk's text gets persisted into history/localStorage. Normal RAG
+// chunks (~600 chars) are well under this; Full-Text Mode's "chunks" are entire documents
+// and would otherwise bloat storage without bound.
+const MAX_STORED_CHUNK_TEXT = 2000;
 
 export default function App() {
   // ---- Theme ----
@@ -86,6 +91,7 @@ export default function App() {
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
   const [historyArchiveOpen, setHistoryArchiveOpen] = useState(false);
+  const [usedChunksModalOpen, setUsedChunksModalOpen] = useState(false);
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false);
   const [isRebuild, setIsRebuild] = useState(false);
@@ -270,9 +276,25 @@ export default function App() {
         usedImageCount: result.imageCount,
         usedFullTextMode: fullTextMode,
         rewrittenQuery,
+        usedChunks: chunks.map((c) => ({
+          text:
+            c.text.length > MAX_STORED_CHUNK_TEXT
+              ? `${c.text.slice(0, MAX_STORED_CHUNK_TEXT)}…（已截斷，原始長度 ${c.text.length.toLocaleString()} 字）`
+              : c.text,
+          source: c.source,
+          score: c.score,
+          headingPath: c.headingPath ?? [],
+          hasImage: !!c.image,
+        })),
         usage: usageToTokenUsage(combinedUsage, settings.model),
       };
-      setHistory((prev) => [record, ...prev]);
+      setHistory((prev) => {
+        const next = [record, ...prev];
+        // Detailed chunk content is only kept for the newest 10 questions (matches what's
+        // shown on the QA page) — older records keep everything else but drop this to avoid
+        // localStorage growing without bound as more questions accumulate over time.
+        return next.map((r, i) => (i < 10 || r.usedChunks.length === 0 ? r : { ...r, usedChunks: [] }));
+      });
       setCurrentRecordId(record.id);
       setQuestion('');
       setCostEstimate(null);
@@ -320,6 +342,7 @@ export default function App() {
           setClearHistoryConfirmOpen(true);
         }}
       />
+      <UsedChunksModal open={usedChunksModalOpen} history={history} onClose={() => setUsedChunksModalOpen(false)} />
       <ConfirmDialog
         open={clearHistoryConfirmOpen}
         onClose={() => setClearHistoryConfirmOpen(false)}
@@ -397,6 +420,7 @@ export default function App() {
                       activeId={currentRecordId}
                       onSelect={handleSelectHistory}
                       totalCount={history.length}
+                      onViewChunks={() => setUsedChunksModalOpen(true)}
                     />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800/50">
@@ -529,12 +553,26 @@ export default function App() {
                     >
                       <div className="flex items-center justify-between mb-8">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">最後 10 筆詢問記錄</h2>
-                        <button
-                          onClick={() => setMobileHistoryOpen(false)}
-                          className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {history.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setMobileHistoryOpen(false);
+                                setUsedChunksModalOpen(true);
+                              }}
+                              title="查看最新提問使用的段落詳情"
+                              className="flex items-center gap-1 text-[11px] font-bold text-indigo-500 dark:text-indigo-400 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/30"
+                            >
+                              <Layers className="w-3.5 h-3.5" /> 段落
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setMobileHistoryOpen(false)}
+                            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-3 pb-6 custom-scrollbar">
                         {history.slice(0, 10).map((record) => (

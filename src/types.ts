@@ -45,6 +45,14 @@ export interface TokenUsage {
   model: string;
 }
 
+export interface UsedChunk {
+  text: string;
+  source: string;
+  score: number;
+  headingPath: string[];
+  hasImage: boolean;
+}
+
 export interface QuestionRecord {
   id: string;
   question: string;
@@ -55,6 +63,7 @@ export interface QuestionRecord {
   usedImageCount: number;
   usedFullTextMode: boolean;
   rewrittenQuery: string | null;
+  usedChunks: UsedChunk[];
   usage: TokenUsage | null;
 }
 
