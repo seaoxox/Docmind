@@ -128,6 +128,19 @@ export function UsedChunksModal({ open, history, onClose }: Props) {
                                       章節：{chunk.headingPath.join(' > ')}
                                     </p>
                                   )}
+                                  {chunk.matchedText && chunk.matchedText !== chunk.text && (
+                                    <div className="mb-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30">
+                                      <p className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-1">
+                                        命中片段（小切片）
+                                      </p>
+                                      <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed whitespace-pre-wrap">
+                                        {chunk.matchedText}
+                                      </p>
+                                    </div>
+                                  )}
+                                  <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">
+                                    完整區塊（送給 AI 的內容）
+                                  </p>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
                                     <Quote className="w-2.5 h-2.5 inline mr-1 text-slate-300 dark:text-slate-600" />
                                     {chunk.text}

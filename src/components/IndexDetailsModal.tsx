@@ -68,18 +68,22 @@ export function IndexDetailsModal({ open, onClose, onRebuild }: Props) {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-3 gap-3 mb-6 shrink-0">
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.totalChunks}</div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">總段落數</div>
+                <div className="grid grid-cols-4 gap-2.5 mb-6 shrink-0">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-xl font-black text-slate-800 dark:text-slate-100">{summary.totalParents}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">父區塊數</div>
                   </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.sources.length}</div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">來源文件數</div>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-xl font-black text-slate-800 dark:text-slate-100">{summary.totalChunks}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">子段落數</div>
                   </div>
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-2xl font-black text-slate-800 dark:text-slate-100">{summary.totalImages}</div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">圖片段落數</div>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-xl font-black text-slate-800 dark:text-slate-100">{summary.sources.length}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">來源文件數</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-xl font-black text-slate-800 dark:text-slate-100">{summary.totalImages}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">圖片段落數</div>
                   </div>
                 </div>
 
@@ -104,8 +108,11 @@ export function IndexDetailsModal({ open, onClose, onRebuild }: Props) {
                               <ImageIcon className="w-2.5 h-2.5" /> {s.imageCount}
                             </span>
                           )}
+                          <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 px-2 py-0.5 rounded-full">
+                            {s.parentCount} 父區塊
+                          </span>
                           <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
-                            {s.chunkCount} 段落
+                            {s.chunkCount} 子段落
                           </span>
                         </div>
                       </div>

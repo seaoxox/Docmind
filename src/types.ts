@@ -36,6 +36,10 @@ export interface RetrievedChunk {
   score: number;
   headingPath?: string[];
   image?: ChunkImage;
+  /** The small child snippet that actually scored this match — `text` here is its larger
+   *  PARENT (see Parent-Child retrieval), so this is what to show if you want to explain
+   *  *why* this particular section got pulled in. */
+  matchedText?: string;
 }
 
 export interface TokenUsage {
@@ -51,6 +55,7 @@ export interface UsedChunk {
   score: number;
   headingPath: string[];
   hasImage: boolean;
+  matchedText?: string;
 }
 
 export interface QuestionRecord {

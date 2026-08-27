@@ -7,11 +7,24 @@ export interface StoredChunk {
   embedding: number[];
   headingPath: string[];
   image?: ChunkImage;
+  /** Points back to the StoredParent this child was split from — see "Parent-Child" retrieval
+   *  in ragPipeline.ts: this chunk is what gets matched against a query, but its PARENT is
+   *  what actually gets returned/sent to the AI, for fuller context. */
+  parentId: string;
+}
+
+export interface StoredParent {
+  id: string;
+  text: string;
+  source: string;
+  headingPath: string[];
+  image?: ChunkImage;
 }
 
 const DB_NAME = 'docmind-vector-store';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CHUNKS_STORE = 'chunks';
+const PARENTS_STORE = 'parents';
 const META_STORE = 'meta';
 
 function openDB(): Promise<IDBDatabase> {
@@ -21,6 +34,9 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(CHUNKS_STORE)) {
         db.createObjectStore(CHUNKS_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(PARENTS_STORE)) {
+        db.createObjectStore(PARENTS_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'key' });
@@ -72,6 +88,54 @@ export async function countChunks(): Promise<number> {
   const count = await new Promise<number>((resolve, reject) => {
     const tx = db.transaction(CHUNKS_STORE, 'readonly');
     const req = tx.objectStore(CHUNKS_STORE).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return count;
+}
+
+export async function clearParents(): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PARENTS_STORE, 'readwrite');
+    tx.objectStore(PARENTS_STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+export async function putParents(parents: StoredParent[]): Promise<void> {
+  if (parents.length === 0) return;
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PARENTS_STORE, 'readwrite');
+    const store = tx.objectStore(PARENTS_STORE);
+    for (const parent of parents) store.put(parent);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+export async function getAllParents(): Promise<StoredParent[]> {
+  const db = await openDB();
+  const result = await new Promise<StoredParent[]>((resolve, reject) => {
+    const tx = db.transaction(PARENTS_STORE, 'readonly');
+    const req = tx.objectStore(PARENTS_STORE).getAll();
+    req.onsuccess = () => resolve(req.result as StoredParent[]);
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  return result;
+}
+
+export async function countParents(): Promise<number> {
+  const db = await openDB();
+  const count = await new Promise<number>((resolve, reject) => {
+    const tx = db.transaction(PARENTS_STORE, 'readonly');
+    const req = tx.objectStore(PARENTS_STORE).count();
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });

@@ -285,6 +285,7 @@ export default function App() {
           score: c.score,
           headingPath: c.headingPath ?? [],
           hasImage: !!c.image,
+          matchedText: c.matchedText,
         })),
         usage: usageToTokenUsage(combinedUsage, settings.model),
       };
