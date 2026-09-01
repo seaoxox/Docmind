@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, History as HistoryIcon, X, Quote, Layers } from 'lucide-react';
+import { Menu, History as HistoryIcon, X, Quote, Layers, FileStack } from 'lucide-react';
 
 import type { AppDocument, Manifest, ManualChapter, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
 import { cn, taipeiDateString, uid } from './lib/utils';
@@ -39,7 +39,6 @@ import { AnswerSection } from './components/AnswerSection';
 import { CitationStrip, CitationModal } from './components/CitationStrip';
 import { SourceTags } from './components/SourceTags';
 import { AskInput, type CostEstimate } from './components/AskInput';
-import { FullTextModeToggle } from './components/FullTextModeToggle';
 import { ManualBrowser } from './components/ManualBrowser';
 
 const BASE = import.meta.env.BASE_URL;
@@ -51,6 +50,23 @@ const REWRITTEN_QUERY_WEIGHT = 0.8;
 // chunks (~600 chars) are well under this; Full-Text Mode's "chunks" are entire documents
 // and would otherwise bloat storage without bound.
 const MAX_STORED_CHUNK_TEXT = 2000;
+
+function FullTextModeReminder({ onDisable }: { onDisable: () => void }) {
+  return (
+    <button
+      onClick={onDisable}
+      title="點擊關閉全文模式"
+      className="w-full mb-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-left dark:border-amber-500/40 dark:bg-amber-950/20"
+    >
+      <span className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
+        <FileStack className="w-3.5 h-3.5 shrink-0" /> 全文模式已開啟
+      </span>
+      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-500 underline underline-offset-2 shrink-0">
+        點此關閉
+      </span>
+    </button>
+  );
+}
 
 export default function App() {
   // ---- Theme ----
@@ -363,6 +379,11 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
         onSaveRag={handleSaveRagSettings}
+        fullTextMode={fullTextMode}
+        onToggleFullTextMode={setFullTextMode}
+        fullModeTokenEstimate={fullModeTokenEstimate}
+        fullModeCostEstimate={fullModeCostEstimate}
+        docCount={allDocsRef.current.length}
       />
       <SidebarDrawer
         open={drawerOpen}
@@ -425,14 +446,7 @@ export default function App() {
                     />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800/50">
-                    <FullTextModeToggle
-                      enabled={fullTextMode}
-                      onChange={setFullTextMode}
-                      estimatedTokens={fullModeTokenEstimate}
-                      estimatedCost={fullModeCostEstimate}
-                      docCount={allDocsRef.current.length}
-                      provider={settings.provider}
-                    />
+                    {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                     <AskInput
                       value={question}
                       onChange={setQuestion}
@@ -495,7 +509,7 @@ export default function App() {
                 </button>
               </header>
 
-              <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-44">
+              <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-32">
                 <AnswerSection record={currentRecord} loading={asking} error={askError} compact />
 
                 {currentRecord && (
@@ -519,14 +533,7 @@ export default function App() {
               </main>
 
               <footer className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md absolute bottom-0 left-0 right-0 z-20">
-                <FullTextModeToggle
-                  enabled={fullTextMode}
-                  onChange={setFullTextMode}
-                  estimatedTokens={fullModeTokenEstimate}
-                  estimatedCost={fullModeCostEstimate}
-                  docCount={allDocsRef.current.length}
-                  provider={settings.provider}
-                />
+                {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                 <AskInput
                   value={question}
                   onChange={setQuestion}

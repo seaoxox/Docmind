@@ -7,6 +7,7 @@ import { TOP_K as RECOMMENDED_TOP_K } from '../services/ragPipeline';
 import { RAG_TOP_K_BOUNDS } from '../services/storage';
 import { cn } from '../lib/utils';
 import { Switch } from './Switch';
+import { FullTextModeToggle } from './FullTextModeToggle';
 
 interface Props {
   open: boolean;
@@ -15,6 +16,11 @@ interface Props {
   onClose: () => void;
   onSave: (settings: StoredProviderSettings) => void;
   onSaveRag: (settings: RagSettings) => void;
+  fullTextMode: boolean;
+  onToggleFullTextMode: (v: boolean) => void;
+  fullModeTokenEstimate: number;
+  fullModeCostEstimate: number | null;
+  docCount: number;
 }
 
 const PROVIDERS: { id: AiProvider; label: string; keyHint: string; keyUrl: string }[] = [
@@ -31,7 +37,19 @@ function topKWarning(topK: number): string | null {
   return `調高搜尋段落數會增加送給 AI 的內容量，提升每次提問的 token 花費與回應時間。建議值為 ${RECOMMENDED_TOP_K}。`;
 }
 
-export function SettingsModal({ open, settings, ragSettings, onClose, onSave, onSaveRag }: Props) {
+export function SettingsModal({
+  open,
+  settings,
+  ragSettings,
+  onClose,
+  onSave,
+  onSaveRag,
+  fullTextMode,
+  onToggleFullTextMode,
+  fullModeTokenEstimate,
+  fullModeCostEstimate,
+  docCount,
+}: Props) {
   const [draft, setDraft] = useState<StoredProviderSettings>(settings);
   const [ragDraft, setRagDraft] = useState<RagSettings>(ragSettings);
 
@@ -236,6 +254,20 @@ export function SettingsModal({ open, settings, ragSettings, onClose, onSave, on
                 <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
                   提問時先讓 AI 把問題改寫成更貼近文件用詞的查詢句再去搜尋（仍會針對您原本的問題作答，只影響搜尋這一步），可提升口語化問法的命中率，但每次提問會多一次輕量 AI
                   呼叫，略增花費與等待時間。全文模式開啟時不會用到此設定。
+                </p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 mt-4">
+                <FullTextModeToggle
+                  enabled={fullTextMode}
+                  onChange={onToggleFullTextMode}
+                  estimatedTokens={fullModeTokenEstimate}
+                  estimatedCost={fullModeCostEstimate}
+                  docCount={docCount}
+                  provider={activeProvider}
+                />
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  下次提問會立即套用（不需按下「儲存設定」），適合針對單一問題臨時開啟；離開設定視窗後仍會維持開啟狀態，記得問完想關就回來關閉。
                 </p>
               </div>
 
