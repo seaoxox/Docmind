@@ -1,0 +1,16 @@
+{
+  "categories": [
+    {
+      "id": "tb-guidelines",
+      "name": "結核病指引",
+      "description": "結核病診治與防治相關指引文件",
+      "files": ["TB工作手冊全文(1140627更新).docx", "TB工作手冊附錄(202305更新).docx", "結核病診治指引第七版(全冊).docx"]
+    },
+    {
+      "id": "payment-guidelines",
+      "name": "法定傳染病支付作業規範",
+      "description": "結核病及法定傳染病支付作業規範",
+      "files": ["(1141001起適用)衛生福利部法定傳染病醫療服務費用支付作業規範-不含刪除線.pdf.pdf"]
+    }
+  ]
+}

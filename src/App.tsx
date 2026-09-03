@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, History as HistoryIcon, X, Quote, Layers, FileStack } from 'lucide-react';
 
-import type { AppDocument, Manifest, ManualChapter, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
+import type { AppDocument, GuidanceCategory, Manifest, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
 import { cn, taipeiDateString, uid } from './lib/utils';
 import { estimateTokens } from './lib/tokenEstimate';
 import { parseFromUrl } from './services/docParser';
 import { askQuestion, usageToTokenUsage, SYSTEM_PROMPT_TEXT } from './services/aiService';
 import { getModelPricing } from './services/models';
 import { loadManifest } from './services/manifest';
-import { ensureIndex, search, searchMulti, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
+import { loadCategories, findUncategorizedFiles, resolveCategoryFilter } from './services/categories';
+import { ensureIndex, searchMulti, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
 import { rewriteQuery } from './services/queryRewrite';
 import {
   loadSettings,
@@ -39,7 +40,8 @@ import { AnswerSection } from './components/AnswerSection';
 import { CitationStrip, CitationModal } from './components/CitationStrip';
 import { SourceTags } from './components/SourceTags';
 import { AskInput, type CostEstimate } from './components/AskInput';
-import { ManualBrowser } from './components/ManualBrowser';
+import { GuidanceCategoryBrowser } from './components/GuidanceCategoryBrowser';
+import { CategorySelector } from './components/CategorySelector';
 
 const BASE = import.meta.env.BASE_URL;
 // A rewritten query's similarity score is scaled down before comparing against the original
@@ -102,7 +104,9 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ---- Documents + vector index ----
-  const [manualChapters, setManualChapters] = useState<ManualChapter[]>([]);
+  const [categories, setCategories] = useState<GuidanceCategory[]>([]);
+  const [uncategorizedFiles, setUncategorizedFiles] = useState<string[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | 'all'>('all');
   const [fullModeTokenEstimate, setFullModeTokenEstimate] = useState(0);
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
@@ -112,7 +116,7 @@ export default function App() {
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false);
   const [isRebuild, setIsRebuild] = useState(false);
   const allDocsRef = useRef<AppDocument[]>([]);
-  const manifestRef = useRef<Manifest>({ guidanceFiles: [], manual: [] });
+  const manifestRef = useRef<Manifest>({ guidanceFiles: [] });
 
   const runIndexing = async (forceRebuild = false) => {
     setIsRebuild(forceRebuild);
@@ -121,38 +125,40 @@ export default function App() {
 
   const requestRebuild = () => setRebuildConfirmOpen(true);
 
+  // Recomputes whenever the category selection changes, so Full-Text Mode's cost estimate
+  // reflects only the documents actually in scope (not the whole corpus).
+  const recomputeFullModeEstimate = (categoryId: string | 'all') => {
+    const filter = resolveCategoryFilter(categoryId, categories, uncategorizedFiles);
+    const scoped = filter ? allDocsRef.current.filter((d) => filter.includes(d.name)) : allDocsRef.current;
+    setFullModeTokenEstimate(scoped.reduce((sum, d) => sum + estimateTokens(d.content), 0));
+  };
+
+  const handleSelectCategory = (id: string | 'all') => {
+    setSelectedCategoryId(id);
+    recomputeFullModeEstimate(id);
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const manifest = await loadManifest();
+        const [manifest, categoriesConfig] = await Promise.all([loadManifest(), loadCategories()]);
         manifestRef.current = manifest;
 
         const guidanceResults = await Promise.allSettled(
           manifest.guidanceFiles.map((f) => parseFromUrl(`${BASE}guidance_docs/${f.name}`, f.name, 'guidance'))
         );
 
-        const manualFileJobs: Promise<AppDocument>[] = [];
-        for (const chapter of manifest.manual) {
-          for (const file of chapter.files) {
-            if (file.type === 'image') continue;
-            manualFileJobs.push(parseFromUrl(`${BASE}${file.path}`, file.filename, 'manual'));
-          }
-        }
-        const manualResults = await Promise.allSettled(manualFileJobs);
-
         if (cancelled) return;
 
         const guidanceDocs = guidanceResults
           .filter((r): r is PromiseFulfilledResult<AppDocument> => r.status === 'fulfilled')
           .map((r) => r.value);
-        const manualDocs = manualResults
-          .filter((r): r is PromiseFulfilledResult<AppDocument> => r.status === 'fulfilled')
-          .map((r) => r.value);
 
-        allDocsRef.current = [...guidanceDocs, ...manualDocs];
-        setManualChapters(manifest.manual);
-        setFullModeTokenEstimate(allDocsRef.current.reduce((sum, d) => sum + estimateTokens(d.content), 0));
+        allDocsRef.current = guidanceDocs;
+        setCategories(categoriesConfig.categories);
+        setUncategorizedFiles(findUncategorizedFiles(guidanceDocs, categoriesConfig.categories));
+        setFullModeTokenEstimate(guidanceDocs.reduce((sum, d) => sum + estimateTokens(d.content), 0));
 
         await ensureIndex(allDocsRef.current, manifestRef.current, setIndexStatus);
       } catch (err) {
@@ -211,7 +217,8 @@ export default function App() {
     let cancelled = false;
     const handle = setTimeout(async () => {
       try {
-        const chunks = await search(q, ragSettings.topK);
+        const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
+        const chunks = await searchMulti([q], ragSettings.topK, undefined, categoryFilter);
         if (cancelled) return;
         const contextTokens = chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0);
         const inputTokens = contextTokens + estimateTokens(SYSTEM_PROMPT_TEXT) + estimateTokens(q);
@@ -231,7 +238,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [question, indexStatus.phase, settings.model, ragSettings.topK, fullTextMode]);
+  }, [question, indexStatus.phase, settings.model, ragSettings.topK, fullTextMode, selectedCategoryId, categories, uncategorizedFiles]);
 
   const handleAsk = async () => {
     if (!question.trim() || asking) return;
@@ -249,9 +256,11 @@ export default function App() {
     let rewrittenQuery: string | null = null;
     let rewriteUsage = { inputTokens: 0, outputTokens: 0 };
     try {
+      const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
       let chunks;
       if (fullTextMode) {
-        chunks = buildFullTextChunks(allDocsRef.current);
+        const scopedDocs = categoryFilter ? allDocsRef.current.filter((d) => categoryFilter.includes(d.name)) : allDocsRef.current;
+        chunks = buildFullTextChunks(scopedDocs);
       } else {
         if (ragSettings.queryRewrite) {
           try {
@@ -273,8 +282,8 @@ export default function App() {
           }
         }
         chunks = rewrittenQuery
-          ? await searchMulti([q, rewrittenQuery], ragSettings.topK, [1, REWRITTEN_QUERY_WEIGHT])
-          : await searchMulti([q], ragSettings.topK);
+          ? await searchMulti([q, rewrittenQuery], ragSettings.topK, [1, REWRITTEN_QUERY_WEIGHT], categoryFilter)
+          : await searchMulti([q], ragSettings.topK, undefined, categoryFilter);
       }
 
       const result = await askQuestion(settings, q, chunks);
@@ -421,8 +430,14 @@ export default function App() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              className="hidden lg:block"
+              className="hidden lg:flex items-center gap-2"
             >
+              <CategorySelector
+                categories={categories}
+                uncategorizedCount={uncategorizedFiles.length}
+                selectedId={selectedCategoryId}
+                onChange={handleSelectCategory}
+              />
               <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} />
             </motion.div>
           )}
@@ -499,10 +514,19 @@ export default function App() {
             {/* MOBILE QA LAYOUT */}
             <div className="flex lg:hidden flex-col w-full h-full bg-white dark:bg-slate-900 relative">
               <header className="flex items-center justify-between p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20">
-                <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} compact />
+                <div className="flex items-center gap-2 min-w-0">
+                  <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} compact />
+                  <CategorySelector
+                    categories={categories}
+                    uncategorizedCount={uncategorizedFiles.length}
+                    selectedId={selectedCategoryId}
+                    onChange={handleSelectCategory}
+                    compact
+                  />
+                </div>
                 <button
                   onClick={() => setMobileHistoryOpen(true)}
-                  className="flex items-center gap-2 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl text-[11px] font-bold border border-slate-200 dark:border-slate-700"
+                  className="flex items-center gap-2 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0"
                 >
                   <HistoryIcon className="w-4 h-4" />
                   詢問紀錄
@@ -605,7 +629,7 @@ export default function App() {
             </div>
           </>
         ) : (
-          <ManualBrowser chapters={manualChapters} basePath={BASE} />
+          <GuidanceCategoryBrowser categories={categories} uncategorizedFiles={uncategorizedFiles} docs={allDocsRef.current} />
         )}
       </div>
 

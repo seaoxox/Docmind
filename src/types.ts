@@ -1,5 +1,5 @@
 export type DocType = 'markdown' | 'word' | 'pdf' | 'text' | 'unknown';
-export type DocCategory = 'guidance' | 'manual';
+export type DocCategory = 'guidance';
 
 export interface ChunkImage {
   dataUrl: string;
@@ -97,19 +97,6 @@ export interface RagSettings {
   queryRewrite: boolean;
 }
 
-export interface ManualFileEntry {
-  filename: string;
-  path: string; // relative path under manual_md/, used for fetch
-  type: 'markdown' | 'image' | 'other';
-  bytes: number; // captured at build time from disk, stable across CDN/browser cache staleness
-}
-
-export interface ManualChapter {
-  folder: string;
-  title: string;
-  files: ManualFileEntry[];
-}
-
 export interface ManifestFile {
   name: string;
   bytes: number; // captured at build time from disk
@@ -117,7 +104,19 @@ export interface ManifestFile {
 
 export interface Manifest {
   guidanceFiles: ManifestFile[];
-  manual: ManualChapter[];
+}
+
+/** One entry in guidance_categories.json — a named grouping of guidance_docs files
+ *  (e.g. "結核病指引"), hand-maintained by whoever curates the document set. */
+export interface GuidanceCategory {
+  id: string;
+  name: string;
+  description?: string;
+  files: string[];
+}
+
+export interface GuidanceCategoriesConfig {
+  categories: GuidanceCategory[];
 }
 
 export type ViewMode = 'qa' | 'manual';

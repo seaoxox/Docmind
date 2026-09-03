@@ -42,10 +42,7 @@ export type IndexStatus =
  */
 async function computeFingerprint(manifest: Manifest): Promise<string> {
   const guidancePart = manifest.guidanceFiles.map((f) => `${f.name}:${f.bytes}`).sort();
-  const manualPart = manifest.manual.flatMap((chapter) =>
-    chapter.files.map((f) => `${chapter.folder}/${f.filename}:${f.bytes}`)
-  ).sort();
-  const summary = [...guidancePart, ...manualPart].join('|');
+  const summary = guidancePart.join('|');
   const encoded = new TextEncoder().encode(summary);
   const digest = await crypto.subtle.digest('SHA-256', encoded);
   return Array.from(new Uint8Array(digest))
@@ -180,14 +177,20 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * down-weight rewritten queries, since a degenerate rewrite (e.g. "結核" instead of a full
  * question) can score unrealistically high against nearly every chunk in a corpus that's
  * *about* tuberculosis, which would otherwise let it silently outrank the original question.
+ *
+ * Optional `sourceFilter` restricts the search to only children from the given filenames —
+ * used to scope a question to a single guideline category (see categories.ts) instead of
+ * the whole corpus. `null`/undefined means "search everything".
  */
 export async function searchMulti(
   queries: string[],
   topK: number = TOP_K,
-  weights?: number[]
+  weights?: number[],
+  sourceFilter?: string[] | null
 ): Promise<RetrievedChunk[]> {
   await ensureCachesLoaded();
-  const children = cachedChildren!;
+  const filterSet = sourceFilter ? new Set(sourceFilter) : null;
+  const children = filterSet ? cachedChildren!.filter((c) => filterSet.has(c.source)) : cachedChildren!;
   const parentsById = cachedParents!;
 
   const pairs = queries
