@@ -77,7 +77,7 @@ export function CategorySelector({ categories, uncategorizedCount, selectedId, o
                 )}
               >
                 <span className="flex-1 truncate">{c.name}</span>
-                <span className="text-[10px] text-slate-400">{c.files.length}</span>
+                <span className="text-[10px] text-slate-400">{c.files?.length ?? 0}</span>
                 {selectedId === c.id && <Check size={12} />}
               </button>
             ))}

@@ -15,10 +15,10 @@ function formatTime(ts: number): string {
 }
 
 export function UsedChunksModal({ open, history, onClose }: Props) {
-  const records = history.slice(0, 10).filter((r) => r.usedChunks.length > 0);
+  const records = history.slice(0, 10).filter((r) => (r?.usedChunks?.length ?? 0) > 0);
   const [expandedId, setExpandedId] = useState<string | null>(records[0]?.id ?? null);
 
-  const totalChunks = records.reduce((sum, r) => sum + r.usedChunks.length, 0);
+  const totalChunks = records.reduce((sum, r) => sum + (r.usedChunks?.length ?? 0), 0);
 
   return (
     <AnimatePresence>
@@ -86,7 +86,7 @@ export function UsedChunksModal({ open, history, onClose }: Props) {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-full">
-                            {record.usedChunks.length} 段落
+                            {record.usedChunks?.length ?? 0} 段落
                           </span>
                           <ChevronDown
                             className={cn('w-4 h-4 text-slate-400 transition-transform', isOpen && 'rotate-180')}
@@ -103,7 +103,7 @@ export function UsedChunksModal({ open, history, onClose }: Props) {
                             className="overflow-hidden"
                           >
                             <div className="p-3 space-y-2 bg-white dark:bg-slate-900">
-                              {record.usedChunks.map((chunk, idx) => (
+                              {(record.usedChunks ?? []).map((chunk, idx) => (
                                 <div
                                   key={idx}
                                   className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 bg-slate-50/40 dark:bg-slate-800/20"

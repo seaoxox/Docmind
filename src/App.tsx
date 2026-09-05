@@ -345,7 +345,7 @@ export default function App() {
         // Detailed chunk content is only kept for the newest 10 questions (matches what's
         // shown on the QA page) — older records keep everything else but drop this to avoid
         // localStorage growing without bound as more questions accumulate over time.
-        return next.map((r, i) => (i < 10 || r.usedChunks.length === 0 ? r : { ...r, usedChunks: [] }));
+        return next.map((r, i) => (i < 10 || (r.usedChunks?.length ?? 0) === 0 ? r : { ...r, usedChunks: [] }));
       });
       setCurrentRecordId(record.id);
       setQuestion('');
