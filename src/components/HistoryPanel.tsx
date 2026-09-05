@@ -1,4 +1,4 @@
-import { History } from 'lucide-react';
+import { History, Layers } from 'lucide-react';
 import type { QuestionRecord } from '../types';
 import { cn } from '../lib/utils';
 
@@ -49,12 +49,31 @@ interface Props {
   history: QuestionRecord[];
   activeId: string | null;
   onSelect: (record: QuestionRecord) => void;
+  totalCount?: number;
+  onViewChunks?: () => void;
 }
 
-export function HistoryPanel({ history, activeId, onSelect }: Props) {
+export function HistoryPanel({ history, activeId, onSelect, totalCount, onViewChunks }: Props) {
+  const hasMore = totalCount !== undefined && totalCount > history.length;
   return (
     <>
-      <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">詢問記錄 / Records</h2>
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 shrink-0">
+          詢問記錄 / Records
+        </h2>
+        <div className="flex items-center gap-2">
+          {hasMore && <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500">最新 {history.length} 筆</span>}
+          {onViewChunks && history.length > 0 && (
+            <button
+              onClick={onViewChunks}
+              title="查看最新提問使用的段落詳情"
+              className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 shrink-0"
+            >
+              <Layers size={11} /> 查看段落
+            </button>
+          )}
+        </div>
+      </div>
       <div className="flex-1 space-y-2 overflow-y-auto pr-2 custom-scrollbar pb-40">
         {history.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 opacity-50 space-y-2">

@@ -18,6 +18,60 @@ export interface AskResult {
  *  it's judged relevant enough to include as context — capped to keep payload/cost sane. */
 const MAX_IMAGES_PER_QUESTION = 4;
 
+/** Only worth auto-retrying a rate limit if the wait is short — a long wait means the
+ *  underlying request itself is too large for the tier's per-minute quota, and waiting
+ *  won't fix that (the retry would hit the exact same limit again). */
+const MAX_AUTO_RETRY_DELAY_SECONDS = 20;
+
+function parseRetryDelaySeconds(res: Response, rawBody: string): number | null {
+  const header = res.headers.get('retry-after');
+  if (header && !Number.isNaN(Number(header))) return Number(header);
+
+  // Gemini's structured RetryInfo: "retryDelay": "13s"
+  const structured = rawBody.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  if (structured) return Math.ceil(parseFloat(structured[1]));
+
+  // Fallback: message text like "Please retry in 13.27s"
+  const inline = rawBody.match(/retry in\s+(\d+(?:\.\d+)?)s/i);
+  if (inline) return Math.ceil(parseFloat(inline[1]));
+
+  return null;
+}
+
+function buildRateLimitMessage(providerLabel: string, rawBody: string, delaySeconds: number | null): string {
+  const quotaHint = rawBody.match(/quota|rate.?limit/i)
+    ? '，這通常代表已達免費（或目前方案的）每分鐘 token 額度上限'
+    : '';
+  const retryHint = delaySeconds ? `建議約 ${delaySeconds} 秒後再試一次；` : '';
+  return `${providerLabel} 目前額度已用完${quotaHint}。${retryHint}若持續發生，可考慮：降低「搜尋段落數（Top-K）」、關閉全文模式、改用其他供應商，或升級為付費方案。`;
+}
+
+/** POSTs JSON to an AI provider, with a single short automatic retry on 429s that look
+ *  transient (i.e. the provider itself told us a short wait would help). A 429 caused by a
+ *  request that's simply too large for the tier's quota (long/no suggested delay) is
+ *  reported immediately instead — retrying that would just fail the same way again. */
+export async function postWithRateLimitRetry(url: string, init: RequestInit, providerLabel: string): Promise<Response> {
+  let res = await fetch(url, init);
+
+  if (res.status === 429) {
+    const bodyText = await res.clone().text();
+    const delaySeconds = parseRetryDelaySeconds(res, bodyText);
+
+    if (delaySeconds !== null && delaySeconds <= MAX_AUTO_RETRY_DELAY_SECONDS) {
+      await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000 + 500));
+      res = await fetch(url, init);
+      if (res.status === 429) {
+        const retryBody = await res.text().catch(() => '');
+        throw new Error(buildRateLimitMessage(providerLabel, retryBody, parseRetryDelaySeconds(res, retryBody)));
+      }
+    } else {
+      throw new Error(buildRateLimitMessage(providerLabel, bodyText, delaySeconds));
+    }
+  }
+
+  return res;
+}
+
 const SYSTEM_PROMPT = `You are a document assistant. Your task is to answer questions based STRICTLY on the provided context passages.
 If the answer is not contained in the context, clearly say you don't know based on the provided documents. Do not fabricate information.
 Some context passages are diagrams/flowcharts provided as images alongside their caption — read them visually when relevant to the question.
@@ -108,12 +162,11 @@ async function callGemini(settings: ProviderSettings, question: string, chunks: 
     generationConfig: { responseMimeType: 'application/json' },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
+  const res = await postWithRateLimitRetry(
+    url,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    'Gemini'
+  );
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`Gemini API 錯誤 (${res.status}): ${errText || res.statusText}`);
@@ -148,15 +201,15 @@ async function callOpenAI(settings: ProviderSettings, question: string, chunks: 
     response_format: { type: 'json_object' },
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.apiKey}`,
+  const res = await postWithRateLimitRetry(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-
+    'OpenAI'
+  );
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`OpenAI API 錯誤 (${res.status}): ${errText || res.statusText}`);
@@ -192,17 +245,20 @@ async function callAnthropic(settings: ProviderSettings, question: string, chunk
     messages: [{ role: 'user', content: userContent }],
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': settings.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+  const res = await postWithRateLimitRetry(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': settings.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-
+    'Anthropic'
+  );
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     throw new Error(`Anthropic API 錯誤 (${res.status}): ${errText || res.statusText}`);

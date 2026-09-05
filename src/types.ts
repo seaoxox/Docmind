@@ -1,5 +1,5 @@
 export type DocType = 'markdown' | 'word' | 'pdf' | 'text' | 'unknown';
-export type DocCategory = 'guidance' | 'manual';
+export type DocCategory = 'guidance';
 
 export interface ChunkImage {
   dataUrl: string;
@@ -36,6 +36,10 @@ export interface RetrievedChunk {
   score: number;
   headingPath?: string[];
   image?: ChunkImage;
+  /** The small child snippet that actually scored this match — `text` here is its larger
+   *  PARENT (see Parent-Child retrieval), so this is what to show if you want to explain
+   *  *why* this particular section got pulled in. */
+  matchedText?: string;
 }
 
 export interface TokenUsage {
@@ -43,6 +47,15 @@ export interface TokenUsage {
   outputTokens: number;
   cost: number | null;
   model: string;
+}
+
+export interface UsedChunk {
+  text: string;
+  source: string;
+  score: number;
+  headingPath: string[];
+  hasImage: boolean;
+  matchedText?: string;
 }
 
 export interface QuestionRecord {
@@ -53,6 +66,9 @@ export interface QuestionRecord {
   timestamp: number;
   retrievedSources: string[];
   usedImageCount: number;
+  usedFullTextMode: boolean;
+  rewrittenQuery: string | null;
+  usedChunks: UsedChunk[];
   usage: TokenUsage | null;
 }
 
@@ -78,19 +94,7 @@ export interface StoredProviderSettings {
 
 export interface RagSettings {
   topK: number;
-}
-
-export interface ManualFileEntry {
-  filename: string;
-  path: string; // relative path under manual_md/, used for fetch
-  type: 'markdown' | 'image' | 'other';
-  bytes: number; // captured at build time from disk, stable across CDN/browser cache staleness
-}
-
-export interface ManualChapter {
-  folder: string;
-  title: string;
-  files: ManualFileEntry[];
+  queryRewrite: boolean;
 }
 
 export interface ManifestFile {
@@ -100,7 +104,19 @@ export interface ManifestFile {
 
 export interface Manifest {
   guidanceFiles: ManifestFile[];
-  manual: ManualChapter[];
+}
+
+/** One entry in guidance_categories.json — a named grouping of guidance_docs files
+ *  (e.g. "結核病指引"), hand-maintained by whoever curates the document set. */
+export interface GuidanceCategory {
+  id: string;
+  name: string;
+  description?: string;
+  files: string[];
+}
+
+export interface GuidanceCategoriesConfig {
+  categories: GuidanceCategory[];
 }
 
 export type ViewMode = 'qa' | 'manual';

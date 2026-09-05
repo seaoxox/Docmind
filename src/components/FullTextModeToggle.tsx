@@ -1,0 +1,77 @@
+import { AnimatePresence, motion } from 'motion/react';
+import { FileStack, AlertTriangle } from 'lucide-react';
+import { Switch } from './Switch';
+import type { AiProvider } from '../types';
+
+function formatCost(v: number): string {
+  return v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`;
+}
+
+// Gemini's free tier caps input tokens per request/minute at 250,000 — a single Full-Text
+// Mode request can exceed this outright, in which case no amount of retrying will help
+// (the very same request will hit the very same wall). Worth calling out explicitly rather
+// than letting it surface only as a raw 429 error after the user has already sent it.
+const GEMINI_FREE_TIER_INPUT_LIMIT = 250_000;
+
+interface Props {
+  enabled: boolean;
+  onChange: (v: boolean) => void;
+  estimatedTokens: number;
+  estimatedCost: number | null;
+  docCount: number;
+  provider: AiProvider;
+}
+
+export function FullTextModeToggle({ enabled, onChange, estimatedTokens, estimatedCost, docCount, provider }: Props) {
+  const exceedsGeminiFreeTier = provider === 'gemini' && estimatedTokens > GEMINI_FREE_TIER_INPUT_LIMIT;
+
+  return (
+    <div className="mb-3">
+      <div
+        className={
+          enabled
+            ? 'flex items-center justify-between gap-3 p-3 rounded-2xl border border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/20'
+            : 'flex items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-700'
+        }
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <FileStack className={enabled ? 'w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0' : 'w-4 h-4 text-slate-400 shrink-0'} />
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-slate-700 dark:text-slate-200">全文模式</div>
+            <div className="text-[10px] text-slate-400 dark:text-slate-500">跳過向量篩選，直接送出全部文件</div>
+          </div>
+        </div>
+        <Switch checked={enabled} onChange={onChange} activeColor="bg-amber-500" />
+      </div>
+
+      <AnimatePresence>
+        {enabled && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/60 p-2.5 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>
+                將送出全部 {docCount} 份文件，預估輸入 ~{estimatedTokens.toLocaleString()} tokens
+                {estimatedCost != null && <> · 預估花費約 {formatCost(estimatedCost)}</>}
+                。費用會明顯高於一般問答，請確認再送出。
+              </span>
+            </div>
+            {exceedsGeminiFreeTier && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-[11px] leading-relaxed text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-400">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                <span>
+                  Gemini 免費方案每次請求限制約 {GEMINI_FREE_TIER_INPUT_LIMIT.toLocaleString()} tokens，這次預估已超過上限，送出很可能會直接失敗（重試也沒用）。建議改用付費方案，或切換至
+                  OpenAI／Anthropic。
+                </span>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

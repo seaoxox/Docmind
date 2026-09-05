@@ -1,10 +1,27 @@
 import type { AppDocument, Manifest, RetrievedChunk } from '../types';
-import { chunkDocuments, toEmbeddingText } from './chunking';
+import { chunkDocumentsHierarchical, renderFullText, toEmbeddingText } from './chunking';
 import { embedQuery, embedTexts, type EmbeddingProgress } from './embeddingService';
-import { clearChunks, countChunks, getAllChunks, getMeta, putChunks, setMeta, type StoredChunk } from './vectorStore';
+import {
+  clearChunks,
+  clearParents,
+  countChunks,
+  getAllChunks,
+  getAllParents,
+  getMeta,
+  putChunks,
+  putParents,
+  setMeta,
+  type StoredChunk,
+  type StoredParent,
+} from './vectorStore';
 import { uid } from '../lib/utils';
 
 const FINGERPRINT_KEY = 'guidance-fingerprint';
+// Bumped whenever the on-disk chunk/parent shape changes (e.g. adding Parent-Child fields) —
+// forces a rebuild even if manifest.json didn't change, since an old-format index wouldn't
+// have the fields the current code expects to read.
+const SCHEMA_VERSION = '2-parent-child';
+const SCHEMA_VERSION_KEY = 'schema-version';
 export const TOP_K = 16;
 
 export type IndexStatus =
@@ -25,10 +42,7 @@ export type IndexStatus =
  */
 async function computeFingerprint(manifest: Manifest): Promise<string> {
   const guidancePart = manifest.guidanceFiles.map((f) => `${f.name}:${f.bytes}`).sort();
-  const manualPart = manifest.manual.flatMap((chapter) =>
-    chapter.files.map((f) => `${chapter.folder}/${f.filename}:${f.bytes}`)
-  ).sort();
-  const summary = [...guidancePart, ...manualPart].join('|');
+  const summary = guidancePart.join('|');
   const encoded = new TextEncoder().encode(summary);
   const digest = await crypto.subtle.digest('SHA-256', encoded);
   return Array.from(new Uint8Array(digest))
@@ -36,13 +50,25 @@ async function computeFingerprint(manifest: Manifest): Promise<string> {
     .join('');
 }
 
-let cachedChunks: StoredChunk[] | null = null;
+let cachedChildren: StoredChunk[] | null = null;
+let cachedParents: Map<string, StoredParent> | null = null;
+
+async function ensureCachesLoaded(): Promise<void> {
+  if (!cachedChildren) cachedChildren = await getAllChunks();
+  if (!cachedParents) {
+    const parents = await getAllParents();
+    cachedParents = new Map(parents.map((p) => [p.id, p]));
+  }
+}
 
 /**
- * Ensures the local vector index reflects the current set of guidance/manual documents.
- * On first run (or whenever manifest.json indicates the underlying documents have changed),
- * this chunks every document, embeds each chunk locally via a Hugging Face model, and persists
- * the vectors to IndexedDB. On subsequent runs with an unchanged manifest, this is a fast no-op.
+ * Ensures the local vector index reflects the current set of guidance/manual documents, using
+ * two-level "Parent-Child" chunking: small child chunks get embedded and matched against
+ * queries (precise), but each child points back to a larger parent section, which is what
+ * actually gets returned to the AI (full context). On first run (or whenever manifest.json
+ * indicates the underlying documents have changed, or the storage schema was upgraded), this
+ * re-chunks every document and re-embeds all children. On subsequent unchanged runs, it's a
+ * fast no-op.
  */
 export async function ensureIndex(
   docs: AppDocument[],
@@ -63,28 +89,36 @@ export async function ensureIndex(
   }
 
   const storedFingerprint = await getMeta(FINGERPRINT_KEY);
+  const storedSchemaVersion = await getMeta(SCHEMA_VERSION_KEY);
   const existingCount = await countChunks();
+  const schemaMatches = storedSchemaVersion === SCHEMA_VERSION;
 
-  if (!forceRebuild && existingCount > 0 && (fingerprint === null || storedFingerprint === fingerprint)) {
-    cachedChunks = null; // will lazy-load from IndexedDB on first search
+  if (!forceRebuild && schemaMatches && existingCount > 0 && (fingerprint === null || storedFingerprint === fingerprint)) {
+    cachedChildren = null; // will lazy-load from IndexedDB on first search
+    cachedParents = null;
     onStatus({ phase: 'ready', chunkCount: existingCount });
     return;
   }
 
   try {
     await clearChunks();
-    const chunks = chunkDocuments(docs.map((d) => ({ blocks: d.blocks, name: d.name })));
+    await clearParents();
+    const { parents, children } = chunkDocumentsHierarchical(docs.map((d) => ({ blocks: d.blocks, name: d.name })));
 
-    if (chunks.length === 0) {
+    if (children.length === 0) {
       if (fingerprint !== null) await setMeta(FINGERPRINT_KEY, fingerprint);
+      await setMeta(SCHEMA_VERSION_KEY, SCHEMA_VERSION);
       onStatus({ phase: 'ready', chunkCount: 0 });
       return;
     }
 
+    await putParents(
+      parents.map((p) => ({ id: p.id, text: p.text, source: p.source, headingPath: p.headingPath, image: p.image }))
+    );
+
     const BATCH_SIZE = 16;
-    const stored: StoredChunk[] = [];
-    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < children.length; i += BATCH_SIZE) {
+      const batch = children.slice(i, i + BATCH_SIZE);
       // Most representative source in this batch, for a friendlier progress message.
       const batchSourceCounts = new Map<string, number>();
       for (const c of batch) batchSourceCounts.set(c.source, (batchSourceCounts.get(c.source) ?? 0) + 1);
@@ -96,26 +130,28 @@ export async function ensureIndex(
           // Model download progress (first run only) reported as 0-100 per file;
           // we surface it as part of the same "embedding" phase for simplicity.
           if (p.progress !== undefined) {
-            onStatus({ phase: 'embedding', done: i, total: chunks.length, currentSource });
+            onStatus({ phase: 'embedding', done: i, total: children.length, currentSource });
           }
         }
       );
-      const newlyStored = batch.map((c, idx) => ({
-        id: uid('chunk'),
+      const newlyStored: StoredChunk[] = batch.map((c, idx) => ({
+        id: uid('child'),
         text: c.text,
         source: c.source,
         embedding: vectors[idx],
         headingPath: c.headingPath,
         image: c.image,
+        parentId: c.parentId,
       }));
-      stored.push(...newlyStored);
       await putChunks(newlyStored);
-      onStatus({ phase: 'embedding', done: Math.min(i + BATCH_SIZE, chunks.length), total: chunks.length, currentSource });
+      onStatus({ phase: 'embedding', done: Math.min(i + BATCH_SIZE, children.length), total: children.length, currentSource });
     }
 
     if (fingerprint !== null) await setMeta(FINGERPRINT_KEY, fingerprint);
-    cachedChunks = null;
-    onStatus({ phase: 'ready', chunkCount: chunks.length });
+    await setMeta(SCHEMA_VERSION_KEY, SCHEMA_VERSION);
+    cachedChildren = null;
+    cachedParents = null;
+    onStatus({ phase: 'ready', chunkCount: children.length });
   } catch (err) {
     onStatus({ phase: 'error', message: err instanceof Error ? err.message : '建立向量索引時發生錯誤。' });
   }
@@ -129,46 +165,88 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Performs a semantic search over the local vector index and returns the top-K most relevant
- * chunks, with a per-source cap so a single large document can't monopolize every slot even
- * when it happens to score well on broad questions. Relevance is still the primary ranking
- * signal — the cap only kicks in once a source has already claimed a generous share of the
- * results, leaving room for other documents to surface when they're genuinely relevant too.
+ * Searches with multiple query variants at once ("Parent-Child" retrieval): small CHILD
+ * chunks are what get matched against the query/queries — scored by their BEST similarity
+ * across any of them — but each match is immediately expanded to its larger PARENT section
+ * before being returned, so the AI sees full context instead of an isolated fragment. The
+ * usual per-source diversity cap is then applied at the (now-deduplicated) parent level.
+ *
+ * This is also what makes query rewriting safe: if a rewritten query drifts off-target, the
+ * original question's matches are still considered. Optional per-query `weights` (same
+ * length/order as `queries`) scale each query's similarity before the max is taken — used to
+ * down-weight rewritten queries, since a degenerate rewrite (e.g. "結核" instead of a full
+ * question) can score unrealistically high against nearly every chunk in a corpus that's
+ * *about* tuberculosis, which would otherwise let it silently outrank the original question.
+ *
+ * Optional `sourceFilter` restricts the search to only children from the given filenames —
+ * used to scope a question to a single guideline category (see categories.ts) instead of
+ * the whole corpus. `null`/undefined means "search everything".
  */
-export async function search(query: string, topK: number = TOP_K): Promise<RetrievedChunk[]> {
-  if (!cachedChunks) {
-    cachedChunks = await getAllChunks();
-  }
-  if (cachedChunks.length === 0) return [];
+export async function searchMulti(
+  queries: string[],
+  topK: number = TOP_K,
+  weights?: number[],
+  sourceFilter?: string[] | null
+): Promise<RetrievedChunk[]> {
+  await ensureCachesLoaded();
+  const filterSet = sourceFilter ? new Set(sourceFilter) : null;
+  const children = filterSet ? cachedChildren!.filter((c) => filterSet.has(c.source)) : cachedChildren!;
+  const parentsById = cachedParents!;
 
-  const queryVec = await embedQuery(query);
-  const scored = cachedChunks
-    .map((c) => ({
-      text: c.text,
-      source: c.source,
-      headingPath: c.headingPath,
-      image: c.image,
-      score: cosineSimilarity(queryVec, c.embedding),
-    }))
+  const pairs = queries
+    .map((q, i) => ({ q: q.trim(), w: weights?.[i] ?? 1 }))
+    .filter((p) => p.q.length > 0);
+  if (children.length === 0 || pairs.length === 0) return [];
+
+  const queryVecs = await Promise.all(pairs.map((p) => embedQuery(p.q)));
+
+  const scoredChildren = children
+    .map((c) => {
+      let best = -Infinity;
+      for (let i = 0; i < queryVecs.length; i++) {
+        const s = cosineSimilarity(queryVecs[i], c.embedding) * pairs[i].w;
+        if (s > best) best = s;
+      }
+      return { child: c, score: best };
+    })
     .sort((a, b) => b.score - a.score);
 
-  const distinctSources = new Set(scored.map((c) => c.source)).size;
+  // Small-to-big expansion: walk children best-first, expand each to its parent, and keep
+  // only the first (highest-scoring) hit per distinct parent.
+  const seenParents = new Set<string>();
+  const candidates: RetrievedChunk[] = [];
+  for (const { child, score } of scoredChildren) {
+    if (seenParents.has(child.parentId)) continue;
+    const parent = parentsById.get(child.parentId);
+    if (!parent) continue;
+    seenParents.add(child.parentId);
+    candidates.push({
+      text: parent.text,
+      source: parent.source,
+      headingPath: parent.headingPath,
+      image: parent.image,
+      score,
+      matchedText: child.text,
+    });
+  }
+
+  const distinctSources = new Set(candidates.map((c) => c.source)).size;
   // With few distinct sources, a stricter cap would just force in irrelevant filler —
   // only diversify meaningfully once there's more than one source to diversify across.
   const maxPerSource = distinctSources <= 1 ? topK : Math.max(2, Math.ceil(topK / Math.min(distinctSources, 3)));
 
   const result: RetrievedChunk[] = [];
   const perSourceCount = new Map<string, number>();
-  for (const item of scored) {
+  for (const item of candidates) {
     if (result.length >= topK) break;
     const count = perSourceCount.get(item.source) ?? 0;
     if (count >= maxPerSource) continue;
     result.push(item);
     perSourceCount.set(item.source, count + 1);
   }
-  // Backfill with the next-highest-scoring chunks if the cap left us short (rare).
+  // Backfill with the next-highest-scoring parents if the cap left us short (rare).
   if (result.length < topK) {
-    for (const item of scored) {
+    for (const item of candidates) {
       if (result.length >= topK) break;
       if (!result.includes(item)) result.push(item);
     }
@@ -177,9 +255,41 @@ export async function search(query: string, topK: number = TOP_K): Promise<Retri
   return result;
 }
 
+export async function search(query: string, topK: number = TOP_K): Promise<RetrievedChunk[]> {
+  return searchMulti([query], topK);
+}
+
+/**
+ * "Full-Text Mode": bypasses vector retrieval entirely and hands the AI the complete text
+ * of every loaded document (with heading structure restored), plus every image found across
+ * them. This trades a much larger token bill for guaranteed recall — nothing gets filtered
+ * out, so there's no risk of a relevant passage failing to score into the Top-K. Intended as
+ * an explicit, opt-in fallback for when retrieval-based answers come back empty or wrong.
+ */
+export function buildFullTextChunks(docs: AppDocument[]): RetrievedChunk[] {
+  const textChunks: RetrievedChunk[] = docs
+    .map((d) => ({ text: renderFullText(d.blocks), source: d.name, score: 1 }))
+    .filter((c) => c.text.trim().length > 0);
+
+  const imageChunks: RetrievedChunk[] = docs.flatMap((d) =>
+    d.blocks
+      .filter((b) => b.image)
+      .map((b) => ({
+        text: b.image!.caption || b.text,
+        source: d.name,
+        score: 1,
+        headingPath: b.headingPath,
+        image: b.image,
+      }))
+  );
+
+  return [...textChunks, ...imageChunks];
+}
+
 export interface IndexSourceSummary {
   source: string;
   chunkCount: number;
+  parentCount: number;
   imageCount: number;
   sampleText: string;
   sampleHeadingPath: string[];
@@ -188,6 +298,7 @@ export interface IndexSourceSummary {
 
 export interface IndexSummary {
   totalChunks: number;
+  totalParents: number;
   totalImages: number;
   fingerprint: string | null;
   sources: IndexSourceSummary[];
@@ -195,25 +306,37 @@ export interface IndexSummary {
 
 /** Reads back what's actually stored in IndexedDB, grouped by source document — for verification/debugging. */
 export async function getIndexSummary(): Promise<IndexSummary> {
-  const [chunks, fingerprint] = await Promise.all([getAllChunks(), getMeta(FINGERPRINT_KEY)]);
+  const [children, parents, fingerprint] = await Promise.all([getAllChunks(), getAllParents(), getMeta(FINGERPRINT_KEY)]);
 
-  const bySource = new Map<string, StoredChunk[]>();
-  for (const chunk of chunks) {
-    const list = bySource.get(chunk.source) ?? [];
-    list.push(chunk);
-    bySource.set(chunk.source, list);
+  const bySource = new Map<string, { children: StoredChunk[]; parents: StoredParent[] }>();
+  for (const c of children) {
+    const entry = bySource.get(c.source) ?? { children: [], parents: [] };
+    entry.children.push(c);
+    bySource.set(c.source, entry);
+  }
+  for (const p of parents) {
+    const entry = bySource.get(p.source) ?? { children: [], parents: [] };
+    entry.parents.push(p);
+    bySource.set(p.source, entry);
   }
 
   const sources: IndexSourceSummary[] = Array.from(bySource.entries())
-    .map(([source, list]) => ({
+    .map(([source, entry]) => ({
       source,
-      chunkCount: list.length,
-      imageCount: list.filter((c) => c.image).length,
-      sampleText: list[0]?.text.slice(0, 160) ?? '',
-      sampleHeadingPath: list[0]?.headingPath ?? [],
-      embeddingDims: list[0]?.embedding.length ?? 0,
+      chunkCount: entry.children.length,
+      parentCount: entry.parents.length,
+      imageCount: entry.children.filter((c) => c.image).length,
+      sampleText: (entry.parents[0]?.text ?? entry.children[0]?.text ?? '').slice(0, 160),
+      sampleHeadingPath: entry.parents[0]?.headingPath ?? entry.children[0]?.headingPath ?? [],
+      embeddingDims: entry.children[0]?.embedding.length ?? 0,
     }))
     .sort((a, b) => a.source.localeCompare(b.source));
 
-  return { totalChunks: chunks.length, totalImages: chunks.filter((c) => c.image).length, fingerprint, sources };
+  return {
+    totalChunks: children.length,
+    totalParents: parents.length,
+    totalImages: children.filter((c) => c.image).length,
+    fingerprint,
+    sources,
+  };
 }

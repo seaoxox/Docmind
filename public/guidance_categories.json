@@ -1,0 +1,10 @@
+{
+  "categories": [
+    {
+      "id": "tb-guidelines",
+      "name": "結核病指引",
+      "description": "結核病診治與防治相關指引文件",
+      "files": ["範例_使用說明.md"]
+    }
+  ]
+}
