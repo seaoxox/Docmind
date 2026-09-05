@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, History as HistoryIcon, X, Quote, Layers, FileStack } from 'lucide-react';
-import { Menu, History as HistoryIcon, X, Quote, Layers, FileStack } from 'lucide-react';
 
-import type { AppDocument, GuidanceCategory, Manifest, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
 import type { AppDocument, GuidanceCategory, Manifest, ProviderSettings, QuestionRecord, RagSettings, StoredProviderSettings, ViewMode, Citation } from './types';
 import { cn, taipeiDateString, uid } from './lib/utils';
 import { estimateTokens } from './lib/tokenEstimate';
@@ -35,8 +33,6 @@ import { IndexStatusBadge } from './components/IndexStatus';
 import { IndexDetailsModal } from './components/IndexDetailsModal';
 import { HistoryArchiveModal } from './components/HistoryArchiveModal';
 import { UsedChunksModal } from './components/UsedChunksModal';
-import { HistoryArchiveModal } from './components/HistoryArchiveModal';
-import { UsedChunksModal } from './components/UsedChunksModal';
 import { IndexingOverlay } from './components/IndexingOverlay';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { HistoryPanel, HistoryItem } from './components/HistoryPanel';
@@ -46,35 +42,8 @@ import { SourceTags } from './components/SourceTags';
 import { AskInput, type CostEstimate } from './components/AskInput';
 import { GuidanceCategoryBrowser } from './components/GuidanceCategoryBrowser';
 import { CategorySelector } from './components/CategorySelector';
-import { GuidanceCategoryBrowser } from './components/GuidanceCategoryBrowser';
-import { CategorySelector } from './components/CategorySelector';
 
 const BASE = import.meta.env.BASE_URL;
-// A rewritten query's similarity score is scaled down before comparing against the original
-// question's — even a sanity-checked rewrite could still be a worse match than the original,
-// so this keeps it from outranking clearly-better original-question matches.
-const REWRITTEN_QUERY_WEIGHT = 0.8;
-// Caps how much of a chunk's text gets persisted into history/localStorage. Normal RAG
-// chunks (~600 chars) are well under this; Full-Text Mode's "chunks" are entire documents
-// and would otherwise bloat storage without bound.
-const MAX_STORED_CHUNK_TEXT = 2000;
-
-function FullTextModeReminder({ onDisable }: { onDisable: () => void }) {
-  return (
-    <button
-      onClick={onDisable}
-      title="點擊關閉全文模式"
-      className="w-full mb-3 flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-left dark:border-amber-500/40 dark:bg-amber-950/20"
-    >
-      <span className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
-        <FileStack className="w-3.5 h-3.5 shrink-0" /> 全文模式已開啟
-      </span>
-      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-500 underline underline-offset-2 shrink-0">
-        點此關閉
-      </span>
-    </button>
-  );
-}
 // A rewritten query's similarity score is scaled down before comparing against the original
 // question's — even a sanity-checked rewrite could still be a worse match than the original,
 // so this keeps it from outranking clearly-better original-question matches.
@@ -146,13 +115,9 @@ export default function App() {
   const [historyArchiveOpen, setHistoryArchiveOpen] = useState(false);
   const [usedChunksModalOpen, setUsedChunksModalOpen] = useState(false);
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
-  const [historyArchiveOpen, setHistoryArchiveOpen] = useState(false);
-  const [usedChunksModalOpen, setUsedChunksModalOpen] = useState(false);
-  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
   const [rebuildConfirmOpen, setRebuildConfirmOpen] = useState(false);
   const [isRebuild, setIsRebuild] = useState(false);
   const allDocsRef = useRef<AppDocument[]>([]);
-  const manifestRef = useRef<Manifest>({ guidanceFiles: [] });
   const manifestRef = useRef<Manifest>({ guidanceFiles: [] });
 
   const runIndexing = async (forceRebuild = false) => {
@@ -186,7 +151,6 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const [manifest, categoriesConfig] = await Promise.all([loadManifest(), loadCategories()]);
         const [manifest, categoriesConfig] = await Promise.all([loadManifest(), loadCategories()]);
         manifestRef.current = manifest;
 
@@ -231,7 +195,6 @@ export default function App() {
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
   const [fullTextMode, setFullTextMode] = useState(false);
-  const [fullTextMode, setFullTextMode] = useState(false);
 
   useEffect(() => saveHistory(history), [history]);
 
@@ -249,19 +212,10 @@ export default function App() {
     return (fullModeTokenEstimate / 1_000_000) * pricing.input + (500 / 1_000_000) * pricing.output;
   }, [fullModeTokenEstimate, settings.model]);
 
-  const fullModeCostEstimate = useMemo(() => {
-    const pricing = getModelPricing(settings.model);
-    if (!pricing) return null;
-    // Output is negligible relative to the whole-corpus input, so just use the low estimate.
-    return (fullModeTokenEstimate / 1_000_000) * pricing.input + (500 / 1_000_000) * pricing.output;
-  }, [fullModeTokenEstimate, settings.model]);
-
   // Pre-send cost prediction (B): debounced, runs the actual local vector search
   // (free, in-browser) so the estimate reflects the real context that would be sent.
   // Skipped entirely in Full-Text Mode, which has its own static estimate above.
-  // Skipped entirely in Full-Text Mode, which has its own static estimate above.
   useEffect(() => {
-    if (fullTextMode) return;
     if (fullTextMode) return;
     const q = question.trim();
     if (!q || indexStatus.phase !== 'ready' || !selectedCategoryId) {
@@ -302,7 +256,6 @@ export default function App() {
       clearTimeout(handle);
     };
   }, [question, indexStatus.phase, settings.model, ragSettings.topK, fullTextMode, selectedCategoryId, categories, uncategorizedFiles]);
-  }, [question, indexStatus.phase, settings.model, ragSettings.topK, fullTextMode, selectedCategoryId, categories, uncategorizedFiles]);
 
   const handleAsk = async () => {
     if (!question.trim() || asking) return;
@@ -312,10 +265,6 @@ export default function App() {
     }
     if (!fullTextMode && indexStatus.phase !== 'ready') {
       setAskError('向量索引尚未建立完成，請稍候再試。');
-      return;
-    }
-    if (fullTextMode && allDocsRef.current.length === 0) {
-      setAskError('尚未載入任何指引文件。');
       return;
     }
     if (fullTextMode && allDocsRef.current.length === 0) {
@@ -368,10 +317,6 @@ export default function App() {
         inputTokens: result.usage.inputTokens + rewriteUsage.inputTokens,
         outputTokens: result.usage.outputTokens + rewriteUsage.outputTokens,
       };
-      const combinedUsage = {
-        inputTokens: result.usage.inputTokens + rewriteUsage.inputTokens,
-        outputTokens: result.usage.outputTokens + rewriteUsage.outputTokens,
-      };
       const record: QuestionRecord = {
         id: uid('qr'),
         question: q,
@@ -394,28 +339,7 @@ export default function App() {
           matchedText: c.matchedText,
         })),
         usage: usageToTokenUsage(combinedUsage, settings.model),
-        usedFullTextMode: fullTextMode,
-        rewrittenQuery,
-        usedChunks: chunks.map((c) => ({
-          text:
-            c.text.length > MAX_STORED_CHUNK_TEXT
-              ? `${c.text.slice(0, MAX_STORED_CHUNK_TEXT)}…（已截斷，原始長度 ${c.text.length.toLocaleString()} 字）`
-              : c.text,
-          source: c.source,
-          score: c.score,
-          headingPath: c.headingPath ?? [],
-          hasImage: !!c.image,
-          matchedText: c.matchedText,
-        })),
-        usage: usageToTokenUsage(combinedUsage, settings.model),
       };
-      setHistory((prev) => {
-        const next = [record, ...prev];
-        // Detailed chunk content is only kept for the newest 10 questions (matches what's
-        // shown on the QA page) — older records keep everything else but drop this to avoid
-        // localStorage growing without bound as more questions accumulate over time.
-        return next.map((r, i) => (i < 10 || r.usedChunks.length === 0 ? r : { ...r, usedChunks: [] }));
-      });
       setHistory((prev) => {
         const next = [record, ...prev];
         // Detailed chunk content is only kept for the newest 10 questions (matches what's
@@ -483,30 +407,6 @@ export default function App() {
         secondMessage="請再次確認：所有歷史紀錄將被永久刪除，確定要繼續嗎？"
         confirmLabel="確定清空"
       />
-      <HistoryArchiveModal
-        open={historyArchiveOpen}
-        history={history}
-        activeId={currentRecordId}
-        onClose={() => setHistoryArchiveOpen(false)}
-        onSelect={handleSelectHistory}
-        onRequestClear={() => {
-          setHistoryArchiveOpen(false);
-          setClearHistoryConfirmOpen(true);
-        }}
-      />
-      <UsedChunksModal open={usedChunksModalOpen} history={history} onClose={() => setUsedChunksModalOpen(false)} />
-      <ConfirmDialog
-        open={clearHistoryConfirmOpen}
-        onClose={() => setClearHistoryConfirmOpen(false)}
-        onConfirm={() => {
-          setHistory([]);
-          setCurrentRecordId(null);
-        }}
-        title="清空所有歷史紀錄？"
-        message="這會刪除目前儲存在本機的所有詢問記錄與回答內容，無法復原。"
-        secondMessage="請再次確認：所有歷史紀錄將被永久刪除，確定要繼續嗎？"
-        confirmLabel="確定清空"
-      />
       <SettingsModal
         open={settingsOpen}
         settings={storedSettings}
@@ -514,11 +414,6 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
         onSaveRag={handleSaveRagSettings}
-        fullTextMode={fullTextMode}
-        onToggleFullTextMode={setFullTextMode}
-        fullModeTokenEstimate={fullModeTokenEstimate}
-        fullModeCostEstimate={fullModeCostEstimate}
-        docCount={allDocsRef.current.length}
         fullTextMode={fullTextMode}
         onToggleFullTextMode={setFullTextMode}
         fullModeTokenEstimate={fullModeTokenEstimate}
@@ -534,7 +429,6 @@ export default function App() {
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenIndexDetails={() => setIndexDetailsOpen(true)}
-        onOpenHistoryArchive={() => setHistoryArchiveOpen(true)}
         onOpenHistoryArchive={() => setHistoryArchiveOpen(true)}
         sessionCost={sessionCost}
       />
@@ -563,14 +457,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
               className="hidden lg:flex items-center gap-2"
-              className="hidden lg:flex items-center gap-2"
             >
-              <CategorySelector
-                categories={categories}
-                uncategorizedCount={uncategorizedFiles.length}
-                selectedId={selectedCategoryId}
-                onChange={handleSelectCategory}
-              />
               <CategorySelector
                 categories={categories}
                 uncategorizedCount={uncategorizedFiles.length}
@@ -598,16 +485,8 @@ export default function App() {
                       totalCount={history.length}
                       onViewChunks={() => setUsedChunksModalOpen(true)}
                     />
-                    <HistoryPanel
-                      history={history.slice(0, 10)}
-                      activeId={currentRecordId}
-                      onSelect={handleSelectHistory}
-                      totalCount={history.length}
-                      onViewChunks={() => setUsedChunksModalOpen(true)}
-                    />
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800/50">
-                    {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                     {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                     <AskInput
                       value={question}
@@ -671,19 +550,8 @@ export default function App() {
                     compact
                   />
                 </div>
-                <div className="flex items-center gap-2 min-w-0">
-                  <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} compact />
-                  <CategorySelector
-                    categories={categories}
-                    uncategorizedCount={uncategorizedFiles.length}
-                    selectedId={selectedCategoryId}
-                    onChange={handleSelectCategory}
-                    compact
-                  />
-                </div>
                 <button
                   onClick={() => setMobileHistoryOpen(true)}
-                  className="flex items-center gap-2 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0"
                   className="flex items-center gap-2 py-2.5 px-4 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 shrink-0"
                 >
                   <HistoryIcon className="w-4 h-4" />
@@ -715,7 +583,6 @@ export default function App() {
               </main>
 
               <footer className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md absolute bottom-0 left-0 right-0 z-20">
-                {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                 {fullTextMode && <FullTextModeReminder onDisable={() => setFullTextMode(false)} />}
                 <AskInput
                   value={question}
@@ -764,26 +631,6 @@ export default function App() {
                             <X className="w-4 h-4" />
                           </button>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {history.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setMobileHistoryOpen(false);
-                                setUsedChunksModalOpen(true);
-                              }}
-                              title="查看最新提問使用的段落詳情"
-                              className="flex items-center gap-1 text-[11px] font-bold text-indigo-500 dark:text-indigo-400 px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/30"
-                            >
-                              <Layers className="w-3.5 h-3.5" /> 段落
-                            </button>
-                          )}
-                          <button
-                            onClick={() => setMobileHistoryOpen(false)}
-                            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-3 pb-6 custom-scrollbar">
                         {history.slice(0, 10).map((record) => (
@@ -808,7 +655,6 @@ export default function App() {
             </div>
           </>
         ) : (
-          <GuidanceCategoryBrowser categories={categories} uncategorizedFiles={uncategorizedFiles} docs={allDocsRef.current} />
           <GuidanceCategoryBrowser categories={categories} uncategorizedFiles={uncategorizedFiles} docs={allDocsRef.current} />
         )}
       </div>
