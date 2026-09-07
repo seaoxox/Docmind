@@ -26,16 +26,30 @@ export function findUncategorizedFiles(docs: AppDocument[], categories: Guidance
   return docs.map((d) => d.name).filter((name) => !categorized.has(name));
 }
 
-/** Resolves a category selection ('all' or a category id) down to the concrete filenames it
- *  covers — used to scope vector search / Full-Text Mode to just that guideline's documents.
- *  Returns null for 'all' (meaning: no filter, search everything). */
+export const UNCATEGORIZED_ID = '__uncategorized__';
+
+/** Picks a sensible default category to select once categories/files finish loading —
+ *  the first defined category, or the uncategorized group if there are no categories but
+ *  some files exist anyway. Empty string means "nothing to select yet". */
+export function defaultCategoryId(categories: GuidanceCategory[], uncategorizedFiles: string[]): string {
+  if (categories.length > 0) return categories[0].id;
+  if (uncategorizedFiles.length > 0) return UNCATEGORIZED_ID;
+  return '';
+}
+
+/** Resolves a category selection (a category id, or the special uncategorized-group id) down
+ *  to the concrete filenames it covers — used to scope vector search / Full-Text Mode to just
+ *  that single guideline's documents. There is deliberately no "search everything" option:
+ *  every question is scoped to exactly one category. Returns null if the id doesn't resolve
+ *  to anything (e.g. no category selected yet) — callers should treat that as "no documents
+ *  in scope" rather than silently falling back to searching everything. */
 export function resolveCategoryFilter(
-  categoryId: string | 'all',
+  categoryId: string,
   categories: GuidanceCategory[],
   uncategorizedFiles: string[]
 ): string[] | null {
-  if (categoryId === 'all') return null;
-  if (categoryId === '__uncategorized__') return uncategorizedFiles;
+  if (!categoryId) return null;
+  if (categoryId === UNCATEGORIZED_ID) return uncategorizedFiles;
   const category = categories.find((c) => c.id === categoryId);
   return category ? category.files : null;
 }

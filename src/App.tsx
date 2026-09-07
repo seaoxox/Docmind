@@ -9,8 +9,8 @@ import { parseFromUrl } from './services/docParser';
 import { askQuestion, usageToTokenUsage, SYSTEM_PROMPT_TEXT } from './services/aiService';
 import { getModelPricing } from './services/models';
 import { loadManifest } from './services/manifest';
-import { loadCategories, findUncategorizedFiles, resolveCategoryFilter } from './services/categories';
-import { ensureIndex, searchMulti, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
+import { loadCategories, findUncategorizedFiles, resolveCategoryFilter, defaultCategoryId } from './services/categories';
+import { ensureIndex, searchMulti, buildFullTextChunks, getIndexSummary, type IndexStatus } from './services/ragPipeline';
 import { rewriteQuery } from './services/queryRewrite';
 import {
   loadSettings,
@@ -106,7 +106,10 @@ export default function App() {
   // ---- Documents + vector index ----
   const [categories, setCategories] = useState<GuidanceCategory[]>([]);
   const [uncategorizedFiles, setUncategorizedFiles] = useState<string[]>([]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | 'all'>('all');
+  // Every question is scoped to exactly one category — empty string means "not selected yet"
+  // (still loading, or no categories/files exist at all).
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [categoryChunkCount, setCategoryChunkCount] = useState<number | null>(null);
   const [fullModeTokenEstimate, setFullModeTokenEstimate] = useState(0);
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
@@ -125,18 +128,53 @@ export default function App() {
 
   const requestRebuild = () => setRebuildConfirmOpen(true);
 
-  // Recomputes whenever the category selection changes, so Full-Text Mode's cost estimate
-  // reflects only the documents actually in scope (not the whole corpus).
-  const recomputeFullModeEstimate = (categoryId: string | 'all') => {
-    const filter = resolveCategoryFilter(categoryId, categories, uncategorizedFiles);
-    const scoped = filter ? allDocsRef.current.filter((d) => filter.includes(d.name)) : allDocsRef.current;
+  // Recomputes Full-Text Mode's cost estimate for a given category selection, reflecting only
+  // the documents actually in scope (not the whole corpus) — accepts explicit args rather than
+  // reading state directly, since it's also called right after loading finishes, before the
+  // corresponding state updates have flushed.
+  const recomputeFullModeEstimate = (
+    categoryId: string,
+    docs: AppDocument[],
+    cats: GuidanceCategory[],
+    uncategorized: string[]
+  ) => {
+    const filter = resolveCategoryFilter(categoryId, cats, uncategorized);
+    const scoped = filter ? docs.filter((d) => filter.includes(d.name)) : [];
     setFullModeTokenEstimate(scoped.reduce((sum, d) => sum + estimateTokens(d.content), 0));
   };
 
-  const handleSelectCategory = (id: string | 'all') => {
+  const handleSelectCategory = (id: string) => {
     setSelectedCategoryId(id);
-    recomputeFullModeEstimate(id);
+    recomputeFullModeEstimate(id, allDocsRef.current, categories, uncategorizedFiles);
   };
+
+  // Keeps the "已索引 N 段落" badge scoped to whichever category is currently selected,
+  // instead of always showing the total across the whole corpus.
+  useEffect(() => {
+    if (indexStatus.phase !== 'ready' || !selectedCategoryId) {
+      setCategoryChunkCount(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const filter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
+        if (!filter) {
+          if (!cancelled) setCategoryChunkCount(null);
+          return;
+        }
+        const summary = await getIndexSummary();
+        const filterSet = new Set(filter);
+        const count = summary.sources.filter((s) => filterSet.has(s.source)).reduce((sum, s) => sum + s.chunkCount, 0);
+        if (!cancelled) setCategoryChunkCount(count);
+      } catch {
+        if (!cancelled) setCategoryChunkCount(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategoryId, indexStatus.phase, categories, uncategorizedFiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,9 +194,13 @@ export default function App() {
           .map((r) => r.value);
 
         allDocsRef.current = guidanceDocs;
+        const uncategorized = findUncategorizedFiles(guidanceDocs, categoriesConfig.categories);
         setCategories(categoriesConfig.categories);
-        setUncategorizedFiles(findUncategorizedFiles(guidanceDocs, categoriesConfig.categories));
-        setFullModeTokenEstimate(guidanceDocs.reduce((sum, d) => sum + estimateTokens(d.content), 0));
+        setUncategorizedFiles(uncategorized);
+
+        const initialCategoryId = defaultCategoryId(categoriesConfig.categories, uncategorized);
+        setSelectedCategoryId(initialCategoryId);
+        recomputeFullModeEstimate(initialCategoryId, guidanceDocs, categoriesConfig.categories, uncategorized);
 
         await ensureIndex(allDocsRef.current, manifestRef.current, setIndexStatus);
       } catch (err) {
@@ -205,7 +247,7 @@ export default function App() {
   useEffect(() => {
     if (fullTextMode) return;
     const q = question.trim();
-    if (!q || indexStatus.phase !== 'ready') {
+    if (!q || indexStatus.phase !== 'ready' || !selectedCategoryId) {
       setCostEstimate(null);
       return;
     }
@@ -218,6 +260,10 @@ export default function App() {
     const handle = setTimeout(async () => {
       try {
         const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
+        if (!categoryFilter) {
+          if (!cancelled) setCostEstimate(null);
+          return;
+        }
         const chunks = await searchMulti([q], ragSettings.topK, undefined, categoryFilter);
         if (cancelled) return;
         const contextTokens = chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0);
@@ -242,6 +288,10 @@ export default function App() {
 
   const handleAsk = async () => {
     if (!question.trim() || asking) return;
+    if (!selectedCategoryId) {
+      setAskError('請先選擇要搜尋的指引分類。');
+      return;
+    }
     if (!fullTextMode && indexStatus.phase !== 'ready') {
       setAskError('向量索引尚未建立完成，請稍候再試。');
       return;
@@ -257,9 +307,14 @@ export default function App() {
     let rewriteUsage = { inputTokens: 0, outputTokens: 0 };
     try {
       const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
+      if (!categoryFilter) {
+        setAskError('找不到所選的指引分類，請重新選擇。');
+        setAsking(false);
+        return;
+      }
       let chunks;
       if (fullTextMode) {
-        const scopedDocs = categoryFilter ? allDocsRef.current.filter((d) => categoryFilter.includes(d.name)) : allDocsRef.current;
+        const scopedDocs = allDocsRef.current.filter((d) => categoryFilter.includes(d.name));
         chunks = buildFullTextChunks(scopedDocs);
       } else {
         if (ragSettings.queryRewrite) {
@@ -408,7 +463,7 @@ export default function App() {
       />
 
       {/* Floating control bar (top-left) */}
-      <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex items-center gap-2 lg:gap-3 max-w-[420px]">
+      <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex flex-wrap items-center gap-2 lg:gap-3 max-w-[min(92vw,720px)]">
         <button
           onClick={() => setDrawerOpen(true)}
           className="p-2 lg:p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl lg:rounded-2xl shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] hover:scale-105 active:scale-95 transition-all text-slate-800 dark:text-white flex items-center gap-2 lg:gap-3 font-bold text-xs lg:text-sm pr-3 lg:pr-5 group shrink-0"
@@ -438,7 +493,12 @@ export default function App() {
                 selectedId={selectedCategoryId}
                 onChange={handleSelectCategory}
               />
-              <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} />
+              <IndexStatusBadge
+                status={indexStatus}
+                onOpenDetails={() => setIndexDetailsOpen(true)}
+                onRetry={requestRebuild}
+                categoryChunkCount={categoryChunkCount}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -515,7 +575,13 @@ export default function App() {
             <div className="flex lg:hidden flex-col w-full h-full bg-white dark:bg-slate-900 relative">
               <header className="flex items-center justify-between p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20">
                 <div className="flex items-center gap-2 min-w-0">
-                  <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} compact />
+                  <IndexStatusBadge
+                    status={indexStatus}
+                    onOpenDetails={() => setIndexDetailsOpen(true)}
+                    onRetry={requestRebuild}
+                    categoryChunkCount={categoryChunkCount}
+                    compact
+                  />
                   <CategorySelector
                     categories={categories}
                     uncategorizedCount={uncategorizedFiles.length}
