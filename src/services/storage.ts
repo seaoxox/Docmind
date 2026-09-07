@@ -101,7 +101,17 @@ export function saveRagSettings(settings: RagSettings) {
 export function loadHistory(): QuestionRecord[] {
   try {
     const raw = localStorage.getItem(KEYS.history);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((r) => ({
+          ...r,
+          citations: Array.isArray(r?.citations) ? r.citations : [],
+          retrievedSources: Array.isArray(r?.retrievedSources) ? r.retrievedSources : [],
+          usedChunks: Array.isArray(r?.usedChunks) ? r.usedChunks : [],
+        }));
+      }
+    }
   } catch {
     /* ignore */
   }

@@ -22,7 +22,7 @@ export async function loadCategories(): Promise<GuidanceCategoriesConfig> {
 
 /** Files present in guidance_docs but not listed under any category in the config. */
 export function findUncategorizedFiles(docs: AppDocument[], categories: GuidanceCategory[]): string[] {
-  const categorized = new Set(categories.flatMap((c) => c.files));
+  const categorized = new Set(categories.flatMap((c) => c.files || []));
   return docs.map((d) => d.name).filter((name) => !categorized.has(name));
 }
 
@@ -51,5 +51,5 @@ export function resolveCategoryFilter(
   if (!categoryId) return null;
   if (categoryId === UNCATEGORIZED_ID) return uncategorizedFiles;
   const category = categories.find((c) => c.id === categoryId);
-  return category ? category.files : null;
+  return category ? (category.files || []) : null;
 }

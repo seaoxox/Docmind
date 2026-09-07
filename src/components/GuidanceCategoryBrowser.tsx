@@ -43,7 +43,7 @@ export function GuidanceCategoryBrowser({ categories, uncategorizedFiles, docs }
       id: c.id,
       name: c.name,
       description: c.description,
-      files: c.files,
+      files: c.files || [],
     }));
     if (uncategorizedFiles.length > 0) {
       base.push({
@@ -201,13 +201,13 @@ export function GuidanceCategoryBrowser({ categories, uncategorizedFiles, docs }
                   )}
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-3xl font-black text-slate-300 dark:text-slate-700">{activeGroup.files.length}</div>
+                  <div className="text-3xl font-black text-slate-300 dark:text-slate-700">{activeGroup.files?.length ?? 0}</div>
                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Files</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {activeGroup.files.map((filename) => {
+                {(activeGroup.files ?? []).map((filename) => {
                   const doc = docsByName.get(filename);
                   const type = fileTypeLabel(doc);
                   return (
@@ -245,7 +245,7 @@ export function GuidanceCategoryBrowser({ categories, uncategorizedFiles, docs }
                   );
                 })}
               </div>
-              {activeGroup.files.length === 0 && (
+              {(activeGroup.files?.length ?? 0) === 0 && (
                 <div className="py-20 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[3rem]">
                   <Folder className="w-16 h-16 mx-auto opacity-20 mb-4 text-slate-300 dark:text-slate-700" />
                   <p className="text-sm font-bold text-slate-400">此分類尚無文件</p>
