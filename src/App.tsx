@@ -475,11 +475,7 @@ export default function App() {
       />
 
       {/* Floating control bar (top-left) */}
-<<<<<<< HEAD
       <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex flex-wrap items-center gap-2 lg:gap-3 max-w-[calc(100vw-2rem)]">
-=======
-      <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex flex-wrap items-center gap-2 lg:gap-3 max-w-[min(92vw,720px)]">
->>>>>>> 0212ffe7cff27f1d596189121600f3d00d1d552e
         <button
           onClick={() => setDrawerOpen(true)}
           className="p-2 lg:p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl lg:rounded-2xl shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] hover:scale-105 active:scale-95 transition-all text-slate-800 dark:text-white flex items-center gap-2 lg:gap-3 font-bold text-xs lg:text-sm pr-3 lg:pr-5 group shrink-0"
@@ -589,13 +585,8 @@ export default function App() {
 
             {/* MOBILE QA LAYOUT */}
             <div className="flex lg:hidden flex-col w-full h-full bg-white dark:bg-slate-900 relative">
-<<<<<<< HEAD
               <header className="flex items-center justify-between gap-2 p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20 flex-wrap">
                 <div className="flex flex-wrap items-center gap-2 min-w-0">
-=======
-              <header className="flex items-center justify-between p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20">
-                <div className="flex items-center gap-2 min-w-0">
->>>>>>> 0212ffe7cff27f1d596189121600f3d00d1d552e
                   <IndexStatusBadge
                     status={indexStatus}
                     onOpenDetails={() => setIndexDetailsOpen(true)}
