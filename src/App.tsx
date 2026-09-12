@@ -10,7 +10,7 @@ import { askQuestion, usageToTokenUsage, SYSTEM_PROMPT_TEXT } from './services/a
 import { getModelPricing } from './services/models';
 import { loadManifest } from './services/manifest';
 import { loadCategories, findUncategorizedFiles, resolveCategoryFilter, defaultCategoryId } from './services/categories';
-import { ensureIndex, searchMulti, buildFullTextChunks, type IndexStatus } from './services/ragPipeline';
+import { ensureIndex, searchMulti, buildFullTextChunks, getIndexSummary, type IndexStatus } from './services/ragPipeline';
 import { rewriteQuery } from './services/queryRewrite';
 import {
   loadSettings,
@@ -109,6 +109,7 @@ export default function App() {
   // Every question is scoped to exactly one category — empty string means "not selected yet"
   // (still loading, or no categories/files exist at all).
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [categoryChunkCount, setCategoryChunkCount] = useState<number | null>(null);
   const [fullModeTokenEstimate, setFullModeTokenEstimate] = useState(0);
   const [indexStatus, setIndexStatus] = useState<IndexStatus>({ phase: 'idle' });
   const [indexDetailsOpen, setIndexDetailsOpen] = useState(false);
@@ -145,7 +146,39 @@ export default function App() {
   const handleSelectCategory = (id: string) => {
     setSelectedCategoryId(id);
     recomputeFullModeEstimate(id, allDocsRef.current, categories, uncategorizedFiles);
+    // The answer panel would otherwise keep showing a record from the category you just left —
+    // jump to the newest record under the new category instead, or back to the empty state.
+    const latestInCategory = history.find((r) => r.categoryId === id);
+    setCurrentRecordId(latestInCategory?.id ?? null);
   };
+
+  // Keeps the "已索引 N 段落" badge scoped to whichever category is currently selected,
+  // instead of always showing the total across the whole corpus.
+  useEffect(() => {
+    if (indexStatus.phase !== 'ready' || !selectedCategoryId) {
+      setCategoryChunkCount(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const filter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
+        if (!filter) {
+          if (!cancelled) setCategoryChunkCount(null);
+          return;
+        }
+        const summary = await getIndexSummary();
+        const filterSet = new Set(filter);
+        const count = summary.sources.filter((s) => filterSet.has(s.source)).reduce((sum, s) => sum + s.chunkCount, 0);
+        if (!cancelled) setCategoryChunkCount(count);
+      } catch {
+        if (!cancelled) setCategoryChunkCount(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategoryId, indexStatus.phase, categories, uncategorizedFiles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +232,13 @@ export default function App() {
   useEffect(() => saveHistory(history), [history]);
 
   const currentRecord = history.find((r) => r.id === currentRecordId) ?? null;
+
+  // "詢問記錄" only shows questions asked under the currently-selected category — switching
+  // categories switches which history you see, matching how search itself is scoped.
+  const visibleHistory = useMemo(
+    () => history.filter((r) => r.categoryId === selectedCategoryId),
+    [history, selectedCategoryId]
+  );
 
   const sessionCost = useMemo(
     () => history.reduce((sum, r) => sum + (r.usage?.cost ?? 0), 0),
@@ -327,6 +367,7 @@ export default function App() {
         usedImageCount: result.imageCount,
         usedFullTextMode: fullTextMode,
         rewrittenQuery,
+        categoryId: selectedCategoryId,
         usedChunks: chunks.map((c) => ({
           text:
             c.text.length > MAX_STORED_CHUNK_TEXT
@@ -345,7 +386,7 @@ export default function App() {
         // Detailed chunk content is only kept for the newest 10 questions (matches what's
         // shown on the QA page) — older records keep everything else but drop this to avoid
         // localStorage growing without bound as more questions accumulate over time.
-        return next.map((r, i) => (i < 10 || (r.usedChunks?.length ?? 0) === 0 ? r : { ...r, usedChunks: [] }));
+        return next.map((r, i) => (i < 10 || r.usedChunks.length === 0 ? r : { ...r, usedChunks: [] }));
       });
       setCurrentRecordId(record.id);
       setQuestion('');
@@ -394,7 +435,7 @@ export default function App() {
           setClearHistoryConfirmOpen(true);
         }}
       />
-      <UsedChunksModal open={usedChunksModalOpen} history={history} onClose={() => setUsedChunksModalOpen(false)} />
+      <UsedChunksModal open={usedChunksModalOpen} history={visibleHistory} onClose={() => setUsedChunksModalOpen(false)} />
       <ConfirmDialog
         open={clearHistoryConfirmOpen}
         onClose={() => setClearHistoryConfirmOpen(false)}
@@ -434,7 +475,7 @@ export default function App() {
       />
 
       {/* Floating control bar (top-left) */}
-      <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex items-center gap-2 lg:gap-3 max-w-[420px]">
+      <div className="fixed top-4 left-4 lg:top-6 lg:left-6 z-[110] flex flex-wrap items-center gap-2 lg:gap-3 max-w-[calc(100vw-2rem)]">
         <button
           onClick={() => setDrawerOpen(true)}
           className="p-2 lg:p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl lg:rounded-2xl shadow-[0_20px_40px_-12px_rgba(0,0,0,0.15)] hover:scale-105 active:scale-95 transition-all text-slate-800 dark:text-white flex items-center gap-2 lg:gap-3 font-bold text-xs lg:text-sm pr-3 lg:pr-5 group shrink-0"
@@ -456,7 +497,7 @@ export default function App() {
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-              className="hidden lg:flex items-center gap-2"
+              className="hidden lg:flex flex-wrap items-center gap-2 min-w-0"
             >
               <CategorySelector
                 categories={categories}
@@ -464,7 +505,12 @@ export default function App() {
                 selectedId={selectedCategoryId}
                 onChange={handleSelectCategory}
               />
-              <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} />
+              <IndexStatusBadge
+                status={indexStatus}
+                onOpenDetails={() => setIndexDetailsOpen(true)}
+                onRetry={requestRebuild}
+                categoryChunkCount={categoryChunkCount}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -479,10 +525,10 @@ export default function App() {
                 <div className="flex-1 flex flex-col min-h-0 relative">
                   <div className="p-6 flex-1 flex flex-col min-h-0">
                     <HistoryPanel
-                      history={history.slice(0, 10)}
+                      history={visibleHistory.slice(0, 10)}
                       activeId={currentRecordId}
                       onSelect={handleSelectHistory}
-                      totalCount={history.length}
+                      totalCount={visibleHistory.length}
                       onViewChunks={() => setUsedChunksModalOpen(true)}
                     />
                   </div>
@@ -539,9 +585,15 @@ export default function App() {
 
             {/* MOBILE QA LAYOUT */}
             <div className="flex lg:hidden flex-col w-full h-full bg-white dark:bg-slate-900 relative">
-              <header className="flex items-center justify-between p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20">
-                <div className="flex items-center gap-2 min-w-0">
-                  <IndexStatusBadge status={indexStatus} onOpenDetails={() => setIndexDetailsOpen(true)} onRetry={requestRebuild} compact />
+              <header className="flex items-center justify-between gap-2 p-4 pl-32 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-20 flex-wrap">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <IndexStatusBadge
+                    status={indexStatus}
+                    onOpenDetails={() => setIndexDetailsOpen(true)}
+                    onRetry={requestRebuild}
+                    categoryChunkCount={categoryChunkCount}
+                    compact
+                  />
                   <CategorySelector
                     categories={categories}
                     uncategorizedCount={uncategorizedFiles.length}
@@ -633,7 +685,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="flex-1 overflow-y-auto space-y-3 pb-6 custom-scrollbar">
-                        {history.slice(0, 10).map((record) => (
+                        {visibleHistory.slice(0, 10).map((record) => (
                           <HistoryItem
                             key={record.id}
                             record={record}

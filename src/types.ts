@@ -70,6 +70,9 @@ export interface QuestionRecord {
   rewrittenQuery: string | null;
   usedChunks: UsedChunk[];
   usage: TokenUsage | null;
+  /** Which guidance category was selected when this question was asked — used to scope the
+   *  "詢問記錄" history list to whichever category the user currently has selected. */
+  categoryId: string;
 }
 
 export type AiProvider = 'gemini' | 'openai' | 'anthropic';

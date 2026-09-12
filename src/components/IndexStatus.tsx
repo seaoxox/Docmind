@@ -7,9 +7,12 @@ interface Props {
   onOpenDetails: () => void;
   onRetry: () => void;
   compact?: boolean;
+  /** Chunk count scoped to the currently selected category, shown instead of the index's
+   *  total chunk count once known — null while still being computed. */
+  categoryChunkCount?: number | null;
 }
 
-export function IndexStatusBadge({ status, onOpenDetails, onRetry, compact = false }: Props) {
+export function IndexStatusBadge({ status, onOpenDetails, onRetry, compact = false, categoryChunkCount }: Props) {
   const base = 'flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-bold';
 
   if (status.phase === 'embedding') {
@@ -46,6 +49,7 @@ export function IndexStatusBadge({ status, onOpenDetails, onRetry, compact = fal
   }
 
   if (status.phase === 'ready') {
+    const displayCount = categoryChunkCount ?? status.chunkCount;
     return (
       <button
         onClick={onOpenDetails}
@@ -56,7 +60,7 @@ export function IndexStatusBadge({ status, onOpenDetails, onRetry, compact = fal
         title="點擊檢視索引內容"
       >
         <CheckCircle2 className="w-3 h-3 shrink-0" />
-        {!compact ? <span>已索引 {status.chunkCount} 段落</span> : <span>{status.chunkCount}</span>}
+        {!compact ? <span className="whitespace-nowrap">已索引 {displayCount} 段落</span> : <span>{displayCount}</span>}
       </button>
     );
   }
