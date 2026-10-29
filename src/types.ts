@@ -77,7 +77,8 @@ export type AiProvider = 'gemini' | 'openai' | 'anthropic';
 export interface ModelOption {
   id: string;
   label: string;
-  tier: '快速' | '基礎';
+  /** Undefined for auto-detected models whose tier couldn't be guessed. */
+  tier?: '快速' | '基礎';
 }
 
 export interface ProviderSettings {

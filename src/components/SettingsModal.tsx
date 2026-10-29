@@ -1,8 +1,9 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, KeyRound, Info, ChevronDown, SlidersHorizontal, AlertTriangle, CheckCircle2, Wand2 } from 'lucide-react';
+import { X, KeyRound, Info, ChevronDown, SlidersHorizontal, AlertTriangle, CheckCircle2, Wand2, RefreshCw } from 'lucide-react';
 import type { AiProvider, RagSettings, StoredProviderSettings } from '../types';
-import { DEFAULT_MODELS, MODEL_OPTIONS } from '../services/models';
+import { DEFAULT_MODELS } from '../services/models';
+import { discoverModels, loadDiscoveredModels, mergeModelOptions, type DiscoveredModels } from '../services/modelDiscovery';
 import { TOP_K as RECOMMENDED_TOP_K } from '../services/ragPipeline';
 import { RAG_TOP_K_BOUNDS } from '../services/storage';
 import { cn } from '../lib/utils';
@@ -52,6 +53,10 @@ export function SettingsModal({
 }: Props) {
   const [draft, setDraft] = useState<StoredProviderSettings>(settings);
   const [ragDraft, setRagDraft] = useState<RagSettings>(ragSettings);
+  const [discovered, setDiscovered] = useState<DiscoveredModels | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+  const detectAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -59,6 +64,14 @@ export function SettingsModal({
       setRagDraft(ragSettings);
     }
   }, [open, settings, ragSettings]);
+
+  // Show whatever the last successful detection returned (persisted); never fetches by itself.
+  useEffect(() => {
+    detectAbort.current?.abort();
+    setDetecting(false);
+    setDetectError(null);
+    setDiscovered(loadDiscoveredModels(draft.activeProvider));
+  }, [open, draft.activeProvider]);
 
   const activeProvider = draft.activeProvider;
   const activeApiKey = draft.apiKeys[activeProvider] ?? '';
@@ -75,6 +88,27 @@ export function SettingsModal({
 
   const handleModelChange = (value: string) => {
     setDraft((d) => ({ ...d, models: { ...d.models, [activeProvider]: value } }));
+  };
+
+  const modelOptions = mergeModelOptions(activeProvider, discovered);
+  const modelMissing = !modelOptions.some((m) => m.id === activeModel);
+
+  const handleDetect = async () => {
+    detectAbort.current?.abort();
+    const controller = new AbortController();
+    detectAbort.current = controller;
+    setDetecting(true);
+    setDetectError(null);
+    try {
+      const result = await discoverModels(activeProvider, activeApiKey, controller.signal);
+      if (controller.signal.aborted) return;
+      setDiscovered(result);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setDetectError(err instanceof Error ? err.message : '偵測模型失敗，請稍後再試。');
+    } finally {
+      if (!controller.signal.aborted) setDetecting(false);
+    }
   };
 
   const handleSave = () => {
@@ -174,9 +208,10 @@ export function SettingsModal({
                     onChange={(e) => handleModelChange(e.target.value)}
                     className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
-                    {MODEL_OPTIONS[activeProvider].map((m) => (
+                    {modelMissing && <option value={activeModel}>{activeModel}（清單中已不存在）</option>}
+                    {modelOptions.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.label}（{m.tier}）
+                        {m.label}（{m.tier ?? '未分級'}）
                       </option>
                     ))}
                   </select>
@@ -185,6 +220,23 @@ export function SettingsModal({
                 <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
                   快速：回應更即時、成本較低；基礎：推理品質較佳，適合較複雜的問題。
                 </p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDetect}
+                    disabled={detecting || !activeApiKey.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <RefreshCw size={12} className={detecting ? 'animate-spin' : ''} />
+                    {detecting ? '偵測中…' : '偵測可用模型'}
+                  </button>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                    {discovered ? `上次偵測：${new Date(discovered.fetchedAt).toLocaleString()}（共 ${discovered.models.length} 個）` : '尚未偵測，目前為內建清單'}
+                  </span>
+                </div>
+                {detectError && (
+                  <p className="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{detectError}（已保留前次結果）</p>
+                )}
               </div>
 
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
