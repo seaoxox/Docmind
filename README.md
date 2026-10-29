@@ -21,6 +21,7 @@ Gemini／OpenAI／Anthropic API Key，可直接部署於 **GitHub Pages** 這類
 - 對話歷史紀錄（存於瀏覽器 localStorage）、深色／淺色主題切換、每日安全使用提示（以 Asia/Taipei 時區判斷）。
 - 響應式介面：桌面雙欄佈局／手機單欄 + 底部輸入列。
 - AI 供應商與模型皆可下拉選擇：Google Gemini、OpenAI、Anthropic Claude，各自提供「快速」與「基礎」兩種目前公開的模型層級。
+  也可在設定中按「偵測可用模型」，呼叫供應商的模型清單 API 取得該 Key 目前可用的模型；偵測結果會快取在瀏覽器本機，沒有重新偵測時沿用前次結果。
   API Key 僅存於您瀏覽器的 localStorage，不會經過任何第三方伺服器。
 
 ## 本機開發
@@ -102,6 +103,8 @@ VITE_BASE_PATH=/your-repo-name/ npm run build
    - OpenAI：https://platform.openai.com/api-keys
    - Anthropic：https://console.anthropic.com/settings/keys
 3. 從下拉選單選擇模型層級：「快速」（回應更即時、成本較低）或「基礎」（推理品質較佳）。
+   - 想看該 Key 目前可用的其他模型，可按下拉選單下方的「偵測可用模型」。系統只會在您按下按鈕時才發出請求，成功後結果會存在瀏覽器本機，之後沒重新偵測就沿用上次結果；失敗時會保留前次結果並顯示原因。
+   - 偵測到的模型若無法判斷層級會標示「未分級」；沒有內建價格資料的模型，費用估算會顯示為無法估算。
 4. 儲存後即可在「指引問答」頁面提問，系統會自動搜尋最相關的指引文件段落作答。
 
 > **注意**：Anthropic 的 Messages API 是否允許瀏覽器直接呼叫（CORS）依帳戶與網域設定而異，
@@ -124,6 +127,7 @@ src/
     categories.ts                   # 讀取 guidance_categories.json、解析分類/未分類文件
     aiService.ts                      # 依搜尋結果組裝 context，呼叫所選 AI 供應商並解析 JSON citation
     models.ts                           # 各供應商「快速/基礎」模型清單
+    modelDiscovery.ts                       # 呼叫供應商 list-models API、過濾聊天模型並快取偵測結果
     manifest.ts                           # 讀取 public/manifest.json
     storage.ts                              # localStorage 存取（設定/歷史/主題/提示日期）
   types.ts
