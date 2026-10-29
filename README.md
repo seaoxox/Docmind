@@ -139,6 +139,30 @@ public/
   guidance_categories.json  # 指引分類對照表（手動維護，選用）
 ```
 
+## 多人協作開發
+
+### GitHub 端（由 repo 擁有者設定）
+1. **邀請協作者：** Settings → Collaborators → Add people，輸入對方的 GitHub 帳號並給予 **Write** 權限，對方需接受邀請。
+2. **保護 `main` 分支（建議）：** Settings → Branches（或 Rulesets）新增規則，勾選「Require a pull request before merging」與「Require approvals」，讓所有人（含 Claude）都只能走 PR。
+3. **部署：** `.github/workflows/deploy.yml` 只在 `main` 更新時觸發部署，功能分支與 PR 不會誤部署。
+
+### 每位開發者的電腦
+- 安裝 Git 並設定 `user.name`、`user.email`。
+- 安裝 [GitHub CLI（`gh`）](https://cli.github.com/)，執行 `gh auth login`（GitHub.com → HTTPS → 以瀏覽器登入），用自己的帳號登入；使用 Claude 開 PR 需要它。
+- 安裝 Node.js 後在專案內 `npm install`，才能執行 `npm run dev`、`npm run build`、`npm run lint`。
+- 使用 Claude Code 或 Claude 桌面版，並以自己的 Claude 帳號登入。
+- `git clone https://github.com/seaoxox/Docmind.git`
+
+### 建議流程
+1. 從最新的 `main` 切新分支開發，不要直接在 `main` 上修改。
+2. 完成後 commit、push 並開 PR（可請 Claude 代勞）。
+3. 由另一位成員審核後合併，其他人再 `git pull` 同步。
+4. **PR 合併後不要再往同一分支推新 commit**（後續推送不會進入已合併的 PR），新的改動請另開分支與 PR。
+
+### 注意事項
+- repo 內不得出現任何 API Key；本專案 Key 只存在使用者瀏覽器，開發時的測試 Key 也不要寫進程式或提交。
+- `public/guidance_docs/` 的文件會隨 repo 推送並部署為公開網站，新增前請確認可以公開。
+
 ## 資料隱私說明
 
 文件解析、切段與向量嵌入皆於使用者瀏覽器本機完成（向量儲存於 IndexedDB，圖片以 base64 形式一併儲存），不會上傳到任何伺服器。提問時，只有語意搜尋到的相關段落與提問內容（若段落為圖片／流程圖，則含該圖片本身），
