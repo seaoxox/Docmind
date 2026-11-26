@@ -12,6 +12,7 @@ import { loadManifest } from './services/manifest';
 import { loadCategories, findUncategorizedFiles, resolveCategoryFilter, defaultCategoryId } from './services/categories';
 import { ensureIndex, searchMulti, buildFullTextChunks, getIndexSummary, type IndexStatus } from './services/ragPipeline';
 import { rewriteQuery } from './services/queryRewrite';
+import type { AskProgressState } from './components/AskProgress';
 import {
   loadSettings,
   saveSettings,
@@ -224,6 +225,7 @@ export default function App() {
   const [currentRecordId, setCurrentRecordId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
+  const [askProgress, setAskProgress] = useState<AskProgressState | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
@@ -316,6 +318,13 @@ export default function App() {
     const q = question;
     let rewrittenQuery: string | null = null;
     let rewriteUsage = { inputTokens: 0, outputTokens: 0 };
+    const useRewrite = !fullTextMode && ragSettings.queryRewrite;
+    const plan = { fullText: fullTextMode, rewrite: useRewrite };
+    setAskProgress({
+      ...plan,
+      stage: fullTextMode ? 'loading-docs' : useRewrite ? 'rewriting' : 'searching',
+      stageStartedAt: Date.now(),
+    });
     try {
       const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
       if (!categoryFilter) {
@@ -328,7 +337,7 @@ export default function App() {
         const scopedDocs = allDocsRef.current.filter((d) => categoryFilter.includes(d.name));
         chunks = buildFullTextChunks(scopedDocs);
       } else {
-        if (ragSettings.queryRewrite) {
+        if (useRewrite) {
           try {
             const rewriteResult = await rewriteQuery(settings, q);
             // The rewrite call costs tokens regardless of whether we end up using its
@@ -346,12 +355,21 @@ export default function App() {
           } catch {
             // Non-fatal: fall back to searching with the original question alone.
           }
+          setAskProgress({ ...plan, stage: 'searching', stageStartedAt: Date.now(), rewrittenQuery });
         }
         chunks = rewrittenQuery
           ? await searchMulti([q, rewrittenQuery], ragSettings.topK, [1, REWRITTEN_QUERY_WEIGHT], categoryFilter)
           : await searchMulti([q], ragSettings.topK, undefined, categoryFilter);
       }
 
+      setAskProgress((prev) => ({
+        ...plan,
+        rewrittenQuery: prev?.rewrittenQuery,
+        chunkCount: chunks.length,
+        sourceCount: new Set(chunks.map((c: { source: string }) => c.source)).size,
+        stage: 'generating',
+        stageStartedAt: Date.now(),
+      }));
       const result = await askQuestion(settings, q, chunks);
       const combinedUsage = {
         inputTokens: result.usage.inputTokens + rewriteUsage.inputTokens,
@@ -396,6 +414,7 @@ export default function App() {
       setAskError(err instanceof Error ? err.message : '提問時發生未知錯誤。');
     } finally {
       setAsking(false);
+      setAskProgress(null);
     }
   };
 
@@ -551,7 +570,7 @@ export default function App() {
               <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 relative h-full">
                 <section className="flex-1 overflow-y-auto p-8 lg:p-12 custom-scrollbar">
                   <div className="max-w-3xl mx-auto min-h-full">
-                    <AnswerSection record={currentRecord} loading={asking} error={null} />
+                    <AnswerSection record={currentRecord} loading={asking} error={null} progress={askProgress} />
                   </div>
                 </section>
 
@@ -612,7 +631,7 @@ export default function App() {
               </header>
 
               <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-32">
-                <AnswerSection record={currentRecord} loading={asking} error={askError} compact />
+                <AnswerSection record={currentRecord} loading={asking} error={askError} compact progress={askProgress} />
 
                 {currentRecord && (
                   <div className="space-y-4">

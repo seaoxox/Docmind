@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'motion/react';
 import { LayoutDashboard, Coins, Image as ImageIcon, FileStack, Wand2 } from 'lucide-react';
 import type { QuestionRecord } from '../types';
+import { AskProgress, type AskProgressState } from './AskProgress';
 
 function formatCost(v: number): string {
   return v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(3)}`;
@@ -47,9 +48,11 @@ interface Props {
   loading: boolean;
   error: string | null;
   compact?: boolean;
+  /** Step-by-step status shown while `loading`; falls back to a generic spinner if absent. */
+  progress?: AskProgressState | null;
 }
 
-export function AnswerSection({ record, loading, error, compact = false }: Props) {
+export function AnswerSection({ record, loading, error, compact = false, progress = null }: Props) {
   return (
     <AnimatePresence mode="wait">
       {error ? (
@@ -86,21 +89,25 @@ export function AnswerSection({ record, loading, error, compact = false }: Props
           </p>
         </div>
       ) : loading ? (
-        <div className="h-full flex flex-col items-center justify-center space-y-4 py-20">
-          <div className="flex gap-2">
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                animate={{ y: [0, -10, 0], opacity: [0.3, 1, 0.3] }}
-                transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
-                className="w-3 h-3 rounded-full bg-indigo-500"
-              />
-            ))}
+        progress ? (
+          <AskProgress key="progress" progress={progress} />
+        ) : (
+          <div key="loading" className="h-full flex flex-col items-center justify-center space-y-4 py-20">
+            <div className="flex gap-2">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  animate={{ y: [0, -10, 0], opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.2 }}
+                  className="w-3 h-3 rounded-full bg-indigo-500"
+                />
+              ))}
+            </div>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-300 dark:text-slate-700">
+              Searching Documents...
+            </p>
           </div>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-300 dark:text-slate-700">
-            Searching Documents...
-          </p>
-        </div>
+        )
       ) : record ? (
         <motion.div key={record.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
           {!compact && (
