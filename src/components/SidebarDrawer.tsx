@@ -207,6 +207,13 @@ export function SidebarDrawer({
                   <ThemeToggle theme={theme} onToggle={onToggleTheme} />
                 </div>
               </div>
+              <div
+                className="text-center text-[10px] font-mono text-slate-400 dark:text-slate-500"
+                title={`版本 ${__APP_VERSION__}${__APP_COMMIT__ ? `（${__APP_COMMIT__}）` : ''}，建置於 ${__APP_BUILD_DATE__}`}
+              >
+                v{__APP_VERSION__}
+                {__APP_COMMIT__ && <> · {__APP_COMMIT__}</>} · {__APP_BUILD_DATE__}
+              </div>
             </div>
           </motion.div>
         </>
