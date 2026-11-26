@@ -136,6 +136,12 @@ export async function discoverModels(provider: AiProvider, apiKey: string, signa
   return result;
 }
 
+/** Human-readable name for a model id: curated/detected label if known, otherwise the id itself. */
+export function getModelLabel(provider: AiProvider, modelId: string): string {
+  const match = mergeModelOptions(provider, loadDiscoveredModels(provider)).find((m) => m.id === modelId);
+  return match?.label ?? modelId;
+}
+
 /** Curated models first (keeping their labels/tiers), then any other detected models. */
 export function mergeModelOptions(provider: AiProvider, discovered: DiscoveredModels | null): ModelOption[] {
   const curated = MODEL_OPTIONS[provider];

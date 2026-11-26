@@ -50,12 +50,17 @@ interface Props {
   compact?: boolean;
   /** Step-by-step status shown while `loading`; falls back to a generic spinner if absent. */
   progress?: AskProgressState | null;
+  /** Retry button shown on a failed progress step. */
+  onRetry?: () => void;
 }
 
-export function AnswerSection({ record, loading, error, compact = false, progress = null }: Props) {
+export function AnswerSection({ record, loading, error, compact = false, progress = null, onRetry }: Props) {
   return (
     <AnimatePresence mode="wait">
-      {error ? (
+      {progress?.error ? (
+        // A failure during a question is shown on the step that failed, inside the checklist.
+        <AskProgress key="progress-error" progress={progress} onRetry={onRetry} />
+      ) : error ? (
         <motion.div
           key="error"
           initial={{ opacity: 0 }}
