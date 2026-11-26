@@ -13,6 +13,7 @@ import { loadCategories, findUncategorizedFiles, resolveCategoryFilter, defaultC
 import { ensureIndex, searchMulti, buildFullTextChunks, getIndexSummary, type IndexStatus } from './services/ragPipeline';
 import { rewriteQuery } from './services/queryRewrite';
 import type { AskProgressState } from './components/AskProgress';
+import { getModelLabel } from './services/modelDiscovery';
 import {
   loadSettings,
   saveSettings,
@@ -235,6 +236,15 @@ export default function App() {
 
   const currentRecord = history.find((r) => r.id === currentRecordId) ?? null;
 
+  const askModel = useMemo(
+    () => ({
+      label: getModelLabel(settings.provider, settings.model),
+      id: settings.model,
+      provider: { gemini: 'Google Gemini', openai: 'OpenAI', anthropic: 'Anthropic Claude' }[settings.provider],
+    }),
+    [settings.provider, settings.model]
+  );
+
   // "詢問記錄" only shows questions asked under the currently-selected category — switching
   // categories switches which history you see, matching how search itself is scoped.
   const visibleHistory = useMemo(
@@ -329,6 +339,7 @@ export default function App() {
       const categoryFilter = resolveCategoryFilter(selectedCategoryId, categories, uncategorizedFiles);
       if (!categoryFilter) {
         setAskError('找不到所選的指引分類，請重新選擇。');
+        setAskProgress(null);
         setAsking(false);
         return;
       }
@@ -410,17 +421,21 @@ export default function App() {
       setQuestion('');
       setCostEstimate(null);
       setMobileHistoryOpen(false);
+      setAskProgress(null);
     } catch (err) {
-      setAskError(err instanceof Error ? err.message : '提問時發生未知錯誤。');
+      const message = err instanceof Error ? err.message : '提問時發生未知錯誤。';
+      setAskError(message);
+      // Keep the checklist on screen and mark the step that was running as failed.
+      setAskProgress((prev) => (prev ? { ...prev, error: message } : prev));
     } finally {
       setAsking(false);
-      setAskProgress(null);
     }
   };
 
   const handleSelectHistory = (record: QuestionRecord) => {
     setCurrentRecordId(record.id);
     setAskError(null);
+    setAskProgress((prev) => (prev?.error ? null : prev));
   };
 
   return (
@@ -558,10 +573,9 @@ export default function App() {
                       onChange={setQuestion}
                       onSubmit={handleAsk}
                       loading={asking}
-                      error={askError}
-                      onRetry={handleAsk}
                       variant="desktop"
                       costEstimate={costEstimate}
+                      model={askModel}
                     />
                   </div>
                 </div>
@@ -570,7 +584,13 @@ export default function App() {
               <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 relative h-full">
                 <section className="flex-1 overflow-y-auto p-8 lg:p-12 custom-scrollbar">
                   <div className="max-w-3xl mx-auto min-h-full">
-                    <AnswerSection record={currentRecord} loading={asking} error={null} progress={askProgress} />
+                    <AnswerSection
+                      record={currentRecord}
+                      loading={asking}
+                      error={askError}
+                      progress={askProgress}
+                      onRetry={handleAsk}
+                    />
                   </div>
                 </section>
 
@@ -631,7 +651,14 @@ export default function App() {
               </header>
 
               <main className="flex-1 overflow-y-auto p-5 space-y-6 relative custom-scrollbar pb-32">
-                <AnswerSection record={currentRecord} loading={asking} error={askError} compact progress={askProgress} />
+                <AnswerSection
+                  record={currentRecord}
+                  loading={asking}
+                  error={askError}
+                  compact
+                  progress={askProgress}
+                  onRetry={handleAsk}
+                />
 
                 {currentRecord && (
                   <div className="space-y-4">
@@ -662,6 +689,7 @@ export default function App() {
                   loading={asking}
                   variant="mobile"
                   costEstimate={costEstimate}
+                  model={askModel}
                 />
               </footer>
 

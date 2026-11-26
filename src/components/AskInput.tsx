@@ -1,6 +1,5 @@
 import { type KeyboardEvent } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Send, RefreshCw, AlertCircle, Coins } from 'lucide-react';
+import { Send, RefreshCw, Coins, Cpu } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export interface CostEstimate {
@@ -14,10 +13,22 @@ interface Props {
   onChange: (v: string) => void;
   onSubmit: () => void;
   loading: boolean;
-  error?: string | null;
-  onRetry?: () => void;
   variant?: 'desktop' | 'mobile';
   costEstimate?: CostEstimate | null;
+  /** The model that will answer — shown beside the "Ask" heading. */
+  model?: { label: string; id: string; provider: string };
+}
+
+function ModelChip({ model }: { model: NonNullable<Props['model']> }) {
+  return (
+    <span
+      className="inline-flex max-w-[60%] items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+      title={`${model.provider}：${model.id}`}
+    >
+      <Cpu className="h-3 w-3 shrink-0" />
+      <span className="truncate">{model.label}</span>
+    </span>
+  );
 }
 
 function formatCost(v: number): string {
@@ -42,7 +53,7 @@ function CostHint({ estimate, compact = false }: { estimate: CostEstimate; compa
   );
 }
 
-export function AskInput({ value, onChange, onSubmit, loading, error, onRetry, variant = 'desktop', costEstimate }: Props) {
+export function AskInput({ value, onChange, onSubmit, loading, variant = 'desktop', costEstimate, model }: Props) {
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -53,6 +64,11 @@ export function AskInput({ value, onChange, onSubmit, loading, error, onRetry, v
   if (variant === 'mobile') {
     return (
       <div>
+        {model && (
+          <div className="mb-1.5 px-1">
+            <ModelChip model={model} />
+          </div>
+        )}
         <div className="relative">
           <textarea
             value={value}
@@ -77,30 +93,10 @@ export function AskInput({ value, onChange, onSubmit, loading, error, onRetry, v
 
   return (
     <>
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 rounded-xl flex items-center justify-between gap-3 shadow-sm"
-          >
-            <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span className="text-xs font-medium">{error}</span>
-            </div>
-            {onRetry && (
-              <button
-                onClick={onRetry}
-                className="px-3 py-1 bg-red-600 text-white text-[10px] font-bold uppercase rounded-lg hover:bg-red-700 transition-colors shadow-sm shrink-0"
-              >
-                重新搜尋
-              </button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">提出問題 / Ask</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">提出問題 / Ask</h2>
+        {model && <ModelChip model={model} />}
+      </div>
       <div className="relative">
         <textarea
           value={value}
